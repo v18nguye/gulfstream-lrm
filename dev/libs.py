@@ -17,7 +17,6 @@ from scipy.linalg import qr, solve, lstsq
 from scipy.stats import multivariate_normal
 import random as rd
 import time
-import cupy
 
 warnings.filterwarnings('ignore')
 import os
@@ -129,15 +128,15 @@ def region_ex(name):
   return region_
 
 
-def data_split(region, fit = 0.02):
+def data_split(region, fe = 0.02):
   """
-  Prepare the data to fit to the model
+  Prepare the data to feed the model
 
   Parameters:
   ----------
   - region: dict
-  - fit: float (default = 0.02)
-      percentage of data to fit to the model
+  - fe: float (default = 0.02)
+      percentage of data to feed the model
 
   Returns:
   --------
@@ -147,23 +146,113 @@ def data_split(region, fit = 0.02):
   """
   features = ['lat_sin','lon_sin','lon_cos','norm_diy','norm_y','sla']
   targets = ['temp','psal']
-  uniq_profile, counts = np.unique(region['profile_ids'], return_counts = True)
-  nb_eles = sum(counts)
-  nb_eles_fit = int(nb_eles*fit/(uniq_profile.shape[0]))
-  total_nb_fit = nb_eles_fit*uniq_profile.shape[0]
-  X = np.empty(shape=[0, len(features)])
-  y = np.empty(shape=[0, len(targets)])
+
+  uniq_profile, _ = np.unique(region['profile_ids'], return_counts = True)
+  X_train = np.empty(shape=[0, len(features)])
+  y_train = np.empty(shape=[0, len(targets)])
+  X_test = np.empty(shape=[0, len(features)])
+  y_test = np.empty(shape=[0, len(targets)])
+  train_index = np.empty(shape=[1, 0])
+  test_index = np.empty(shape =[1,0])
 
   for i,uni in enumerate(uniq_profile):
-      index = np.where(region['profile_ids'] == uni)[0]
-      np.random.shuffle(index)
-      index_split = index[0:nb_eles_fit]
-      x_uni = np.squeeze(np.asarray([[region[x][index_split]] for x in features])).T
-      y_uni = np.squeeze(np.asarray([[region[x][index_split]] for x in targets])).T
-      X = np.concatenate((X,x_uni), axis =0)
-      y = np.concatenate((y,y_uni), axis =0)
 
-  return X,y
+      index = np.where(region['profile_ids'] == uni)[0]
+      nb_eles = int(index.shape[0]*fe)
+      np.random.shuffle(index)
+
+      train = index[0:nb_eles]
+      train_ = train.reshape(1,train.shape[0])
+      test = index[nb_eles:]
+      test_ = test.reshape(1,test.shape[0])
+
+      train_index = np.concatenate([train_index,train_], axis =1)
+      test_index = np.concatenate([test_index,test_], axis =1)
+
+      x_uni_train = np.squeeze(np.asarray([[region[x][train]] for x in features])).T
+      y_uni_train = np.squeeze(np.asarray([[region[x][train]] for x in targets])).T
+      x_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in features])).T
+      y_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in targets])).T
+
+      X_train = np.concatenate((X_train,x_uni_train), axis =0)
+      y_train = np.concatenate((y_train,y_uni_train), axis =0)
+      X_test = np.concatenate((X_test,x_uni_test), axis =0)
+      y_test = np.concatenate((y_test,y_uni_test), axis =0)
+
+  train_index = np.int_(train_index)
+  test_index = np.int_(test_index)
+
+  return X_train, y_train, train_index, X_test, y_test, test_index
+
+
+def DR(X, variance = 0.8, nb_max = 6, to_plot = False,):
+  """
+  This function does the dimension reduction on the samples
+
+  Parameters
+  ----------
+  - X: numpy array
+      (nb_samples,features)
+  - variances: float (default = 0.8)
+      The percentage of variances to keep
+  - nb_max: int (default = 5)
+      max number of components considered to plot
+  - to_plot: boolean
+      plot the analysis
+
+  Returns
+  -------
+  - X_new: the new X with reduced dimensions
+  """
+  # number of observations
+  n = X.shape[0]
+
+  # instanciation
+  acp = PCA(svd_solver='full')
+  X_transform = acp.fit_transform(X)
+  print("Number of acp components features= ", acp.n_components_)
+  #variance explained
+  eigval = acp.explained_variance_
+
+  # variance of each component
+  variances = acp.explained_variance_ratio_
+
+  # percentage of variance explained
+  cumsum_var_explained= np.cumsum(variances)
+  print("cumsum variance explained= ",cumsum_var_explained[0:nb_max-1])
+
+  #get the number of components satisfying the establised variance condition
+  nb_component_features = np.where(cumsum_var_explained>variance)[0][0]
+  acp_features = PCA(svd_solver='full',n_components =nb_component_features+1)
+  X_new = acp_features.fit_transform(X)
+
+  if to_plot:
+
+      plt.figure(figsize=(10,5))
+      plt.plot(np.arange(1,nb_max),variances[0:nb_max-1])
+      plt.scatter(np.arange(1,nb_max),variances[0:nb_max-1])
+      plt.title("Variance explained by each component")
+      plt.ylabel("Variance values")
+      plt.xlabel("Component")
+
+      #scree plot
+      plt.figure(figsize=(15,10))
+
+      plt.subplot(221)
+      plt.plot(np.arange(1,nb_max),eigval[0:nb_max-1])
+      plt.scatter(np.arange(1,nb_max),eigval[0:nb_max-1])
+      plt.title("Scree plot")
+      plt.ylabel("Eigen values")
+      plt.xlabel("Factor number")
+
+      plt.subplot(222)
+      plt.plot(np.arange(1,nb_max),cumsum_var_explained[0:nb_max-1])
+      plt.scatter(np.arange(1,nb_max),cumsum_var_explained[0:nb_max-1])
+      plt.title("Total Variance explained")
+      plt.ylabel("Variance values")
+      plt.xlabel("Factor number")
+
+  return X_new
 
 
 def DR(X, variance = 0.8, nb_max = 6, to_plot = False,):
@@ -340,10 +429,11 @@ def EM_GPU(X_np,Y_np,lambda_init,Beta_init,Sigma_init,iter_EM, print_ = False):
           # Update sigma (formula - 9)
           Sigma_hat[k,:,:]= torch.mul(pi_hat[:,k].reshape(n,1),Y-X@Beta_hat[k,:,:]).T@(Y-X@Beta_hat[k,:,:])/torch.sum(pi_hat[:,k],0)
 
-      # Stock the log likelihood for an iteration
+      # Stock the likelihood of each sample for an iteration
       lik_tmp = torch.zeros(n,1).cuda()
       for i in range(K):
         lik_tmp = lik_tmp + lambda_hat[k]*torch.exp(MultivariateNormal(X@Beta_hat[k,:,:],Sigma_hat[k,:,:]).log_prob(Y)).reshape(n,1)
+
       log_lik_tmp_np = torch.sum(torch.log(lik_tmp),0).cpu().numpy()
       log_lik.append(log_lik_tmp_np)
 ########## Finish the EM algorithm !
@@ -386,6 +476,6 @@ def BIC(inputs_):
   Nb_params = Sigma_hat.shape[0]*Sigma_hat.shape[1]*Sigma_hat.shape[2] + Beta_hat.shape[0]*Beta_hat.shape[1]*Beta_hat.shape[2]
 
   # Calculate the BIC of the model, in the last EM iteration
-  BIC_ = -2*log_lik[-1] + Nb_params*log(N)
-
-  return BIC_
+  last_log_lik = log_lik[-1][0]
+  BIC_ = -2*last_log_lik + Nb_params*np.log(N)
+  return BIC_,log_lik,Nb_params
