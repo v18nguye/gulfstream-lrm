@@ -77,7 +77,7 @@ def region(file,coords,name):
   profile_ids = region['profile_ids']
 
   # Create a processed dataset #
-  del region['lat'],region['lon'],region['juld'],region['profile_ids'],region['pres']
+  del region['lat'],region['lon'],region['juld'],region['profile_ids']
   region['norm_diy'] = norm_diy; region['norm_y'] = norm_y
   region['lat_sin'] = lat_sin; region['lon_sin'] = lon_sin; region['lon_cos'] = lon_cos
   region['profile_ids'] = profile_ids
@@ -144,7 +144,7 @@ def data_split(region, fe = 0.02):
   - y: target
 
   """
-  features = ['lat_sin','lon_sin','lon_cos','norm_diy','norm_y','sla']
+  features = ['lat_sin','lon_sin','lon_cos','norm_diy','norm_y','sla','pres']
   targets = ['temp','psal']
 
   uniq_profile, _ = np.unique(region['profile_ids'], return_counts = True)
@@ -174,10 +174,10 @@ def data_split(region, fe = 0.02):
       x_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in features])).T
       y_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in targets])).T
 
-      X_train = np.concatenate((X_train,x_uni_train), axis =0)
-      y_train = np.concatenate((y_train,y_uni_train), axis =0)
-      X_test = np.concatenate((X_test,x_uni_test), axis =0)
-      y_test = np.concatenate((y_test,y_uni_test), axis =0)
+      X_train = np.concatenate((X_train,x_uni_train.reshape(train.shape[0],len(features))), axis =0)
+      y_train = np.concatenate((y_train,y_uni_train.reshape(train.shape[0],len(targets))), axis =0)
+      X_test = np.concatenate((X_test,x_uni_test.reshape(test.shape[0],len(features))), axis =0)
+      y_test = np.concatenate((y_test,y_uni_test.reshape(test.shape[0],len(targets))), axis =0)
 
   train_index = np.int_(train_index)
   test_index = np.int_(test_index)
@@ -185,7 +185,7 @@ def data_split(region, fe = 0.02):
   return X_train, y_train, train_index, X_test, y_test, test_index
 
 
-def DR(X, variance = 0.8, nb_max = 6, to_plot = False,):
+def DR(X, variance = 0.8, nb_max = 7, to_plot = False,):
   """
   This function does the dimension reduction on the samples
 
@@ -469,6 +469,8 @@ def BIC(inputs_):
   lambda_init,Beta_init,Sigma_init = init_EM(X,Y,nb_class,method)
   # Peform the EM algorithm
   log_lik,lambda_hat,Beta_hat,Sigma_hat,Y_hat,pi_hat,Z_hat=EM_GPU(X,Y,lambda_init,Beta_init,Sigma_init,iter_EM)
+  # print('Beta_hat: ',Beta_hat)
+  # print('Sigma_hat: ',Sigma_hat)
 
   # Sample size
   N = X.shape[0]
@@ -478,4 +480,4 @@ def BIC(inputs_):
   # Calculate the BIC of the model, in the last EM iteration
   last_log_lik = log_lik[-1][0]
   BIC_ = -2*last_log_lik + Nb_params*np.log(N)
-  return BIC_,log_lik,Nb_params
+  return BIC_,log_lik,Nb_params,Beta_hat,Sigma_hat
