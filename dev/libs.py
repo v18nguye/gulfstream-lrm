@@ -17,125 +17,135 @@ from scipy.linalg import qr, solve, lstsq
 from scipy.stats import multivariate_normal
 import random as rd
 import time
-
+import warnings
 warnings.filterwarnings('ignore')
 import os
 os.environ['PROJ_LIB']= "C:\\Users\\vankh\\Anaconda3\\Lib\\site-packages\\mpl_toolkits\\basemap"
 
 
-def region(file,coords,name):
-  """
-  Extract the the data of specific region from the global one by referencing to it's coordinates
-  Preprocessing the data (date type, latiude, longtitude)
+def region_ex(name, fe = 0.1):
+    """
+    This function extracts data of a specific region !
 
-  Parameters:
-  -----------
-  - file: string
-      a file name containing the global information of the ocean.
-
-  - coords: dict
-      coordinates of the region.
-
-  - name: string
-      pickle file name of the region
-
-  Returns:
-  --------
-  - region: dict
-      contain all region informations
-
-  """
-
-  # Get a particular region #
-  # get the root path
-  root = os.path.abspath(os.path.join("", '..'))
-  # invoke the global data
-  gl_data = pd.read_pickle(root+"\\data\\"+file)
-  # delete rebundant informations
-  del gl_data['n'],gl_data['profile_n']
-  # get index
-  index = np.where((gl_data['lat'] > coords["low_lat"])*(gl_data['lat'] < coords["up_lat"])*(gl_data['lon']>coords["low_lon"])*(gl_data['lon']<coords["up_lon"]))
-  # region extract
-  region = {v: gl_data[v][index] for v in gl_data}
-
-  # Pre-process the region's data #
-  # date data pre-processing
-  encoded_juld = [julian.from_jd(round(x), fmt='mjd') for x in region['juld']]
-  days_in_year =  np.asarray([x.day + (x.month -1)*30 for x in encoded_juld])
-  year = np.asarray([x.year for x in encoded_juld])
-  # normalize the days and year
-  norm_diy = days_in_year/365
-  norm_y = (year - min(year))/(max(year)-min(year))
-  # process latitude
-  lat_rad = region['lat']*(math.pi/180)
-  lat_sin = np.sin(lat_rad)
-  # process longtitude
-  lon_rad = region['lon']*(math.pi/180)
-  lon_sin = np.sin(lon_rad)
-  lon_cos = np.cos(lon_rad)
-  # profile ids
-  profile_ids = region['profile_ids']
-
-  # Create a processed dataset #
-  del region['lat'],region['lon'],region['juld'],region['profile_ids']
-  region['norm_diy'] = norm_diy; region['norm_y'] = norm_y
-  region['lat_sin'] = lat_sin; region['lon_sin'] = lon_sin; region['lon_cos'] = lon_cos
-  region['profile_ids'] = profile_ids
-  # save dataset as a .pkl extention
-  sav_obj = open(name, 'wb')
-  pickle.dump(region,sav_obj)
-  sav_obj.close()
-
-  return region
-
-
-def region_ex(name):
-  """
-  This function extracts data of a specific region !
-
-  Parameters
-  ----------
-  - name: string
+    Parameters
+    ----------
+    - name: string
       name of the region
+    - fe: float (default fe = 0.1)
+      percentage of extracted dataset
 
-  Returns
-  -------
-  - region: dict
+    Returns
+    -------
+    - region: dict
       contain all informations of the region
-  """
+    """
 
-  region_ = {}
+    region_ = {}
 
-  file = 'FetchData.pkl'
+    file = 'FetchData.pkl'
 
-  if name == 'GulfStream':
+    if name == 'GulfStream':
       coords = {}
       coords["up_lon"] = -35
       coords["low_lon"] = -75
       coords["up_lat"] = 50
       coords["low_lat"] = 30
       name = 'GulfStream.pkl'
-      region_ = region(file,coords,name)
-  elif name == 'Kuroshio':
+      region_ = regionv2(file,coords,name,fe)
+    elif name == 'Kuroshio':
       coords = {}
       coords["up_lon"] = 189
       coords["low_lon"] = 132
       coords["up_lat"] = 45
       coords["low_lat"] = 25
       name = 'Kuroshio.pkl'
-      region_ = region(file,coords,name)
+      region_ = regionv2(file,coords,name,fe)
 
-  return region_
+    return region_
 
 
-def data_split(region, fe = 0.02):
+def regionv2(file,coords,name,fe):
+    """
+    Extract the the data of specific region from the global one by referencing to it's coordinates
+    Preprocessing the data (date type, latiude, longtitude)
+
+    Parameters:
+    -----------
+    - file: string
+      a file name containing the global information of the ocean.
+
+    - coords: dict
+      coordinates of the region.
+
+    - name: string
+      pickle file name of the region
+
+    - fe: float
+      percentage of extracted dataset
+
+    Returns:
+    --------
+    - region: dict
+      contain all region informations
+
+    """
+
+    # Get a particular region #
+    # get the root path
+    root = os.path.abspath(os.path.join("", '..'))
+    # invoke the global data
+    gl_data = pd.read_pickle(root+"\\data\\"+file)
+    # delete rebundant informations
+    del gl_data['n'],gl_data['profile_n']
+    # get index
+    index = np.where((gl_data['lat'] > coords["low_lat"])*(gl_data['lat'] < coords["up_lat"])*(gl_data['lon']>coords["low_lon"])*(gl_data['lon']<coords["up_lon"]))
+    # region extract
+    region = {v: gl_data[v][index] for v in gl_data}
+
+    # process days
+    jul_days = region['juld']
+    alpha0_x = np.ones(jul_days.shape[0])
+    alpha1_x = jul_days
+    w = 1/365.25
+    sin_days = np.sin(2*math.pi*w*jul_days)
+    cos_days = np.cos(2*math.pi*w*jul_days)
+
+    # process latitude
+    lat_rad = region['lat']*(math.pi/180)
+    lat_sin = np.sin(lat_rad)
+
+    # process longtitude
+    lon_rad = region['lon']*(math.pi/180)
+    lon_sin = np.sin(lon_rad)
+    lon_cos = np.cos(lon_rad)
+
+    # process pressure
+    # pres = gl_data['pres']
+    ## mode for 0 - 100
+    # beta0_p = pres*(pres <= 200)
+    ## mode for 200 - 1000
+    # beta1_p = pres*(pres > 200)*(pres <= 1000)
+    ## mode for 500-1000
+    # beta2_p = pres*(pres > 1000)
+    ## constant pressure
+    # const_p = np.ones(pres.shape[0])
+
+    # Create a processed dataset #
+    region['alpha0_x'] = alpha0_x; region['alpha1_x'] = alpha1_x; region['sin_days'] = sin_days; region['cos_days'] = cos_days
+    region['lat_sin'] = lat_sin; region['lon_sin'] = lon_sin; region['lon_cos'] = lon_cos
+    # region['beta0_p'] = beta0_p; region['beta1_p'] = beta1_p; region['beta2_p'] = beta2_p
+
+    data_split(region, fe)
+
+
+def data_split(region, fe = 0.1):
   """
   Prepare the data to feed the model
 
   Parameters:
   ----------
   - region: dict
-  - fe: float (default = 0.02)
+  - fe: float (default = 0.1)
       percentage of data to feed the model
 
   Returns:
@@ -144,16 +154,19 @@ def data_split(region, fe = 0.02):
   - y: target
 
   """
-  features = ['lat_sin','lon_sin','lon_cos','norm_diy','norm_y','sla','pres']
+  # features = ['alpha0_x','alpha1_x','sin_days','cos_days','lat_sin','lon_sin','lon_cos','sla','beta0_p','beta1_p','beta2_p']
+  features = ['alpha0_x','alpha1_x','sin_days','cos_days','lat_sin','lon_sin','lon_cos','sla','pres']
   targets = ['temp','psal']
+  # orginal features
+  o_features = ['lat','lon','juld','profile_ids']
 
   uniq_profile, _ = np.unique(region['profile_ids'], return_counts = True)
   X_train = np.empty(shape=[0, len(features)])
   y_train = np.empty(shape=[0, len(targets)])
-  X_test = np.empty(shape=[0, len(features)])
-  y_test = np.empty(shape=[0, len(targets)])
-  train_index = np.empty(shape=[1, 0])
-  test_index = np.empty(shape =[1,0])
+  # X_test = np.empty(shape=[0, len(features)])
+  # y_test = np.empty(shape=[0, len(targets)])
+  o_feature_train = np.empty(shape=[0, len(o_features)])
+  # o_feature_test = np.empty(shape=[0, len(o_features)])
 
   for i,uni in enumerate(uniq_profile):
 
@@ -162,97 +175,99 @@ def data_split(region, fe = 0.02):
       np.random.shuffle(index)
 
       train = index[0:nb_eles]
-      train_ = train.reshape(1,train.shape[0])
-      test = index[nb_eles:]
-      test_ = test.reshape(1,test.shape[0])
-
-      train_index = np.concatenate([train_index,train_], axis =1)
-      test_index = np.concatenate([test_index,test_], axis =1)
+      # test = index[nb_eles:]
 
       x_uni_train = np.squeeze(np.asarray([[region[x][train]] for x in features])).T
       y_uni_train = np.squeeze(np.asarray([[region[x][train]] for x in targets])).T
-      x_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in features])).T
-      y_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in targets])).T
+
+      # x_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in features])).T
+      # y_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in targets])).T
+
+      o_fea_uni_train = np.squeeze(np.asarray([[region[x][train]] for x in o_features])).T
+      # o_fea_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in o_features])).T
 
       X_train = np.concatenate((X_train,x_uni_train.reshape(train.shape[0],len(features))), axis =0)
       y_train = np.concatenate((y_train,y_uni_train.reshape(train.shape[0],len(targets))), axis =0)
-      X_test = np.concatenate((X_test,x_uni_test.reshape(test.shape[0],len(features))), axis =0)
-      y_test = np.concatenate((y_test,y_uni_test.reshape(test.shape[0],len(targets))), axis =0)
 
-  train_index = np.int_(train_index)
-  test_index = np.int_(test_index)
+      # X_test = np.concatenate((X_test,x_uni_test.reshape(test.shape[0],len(features))), axis =0)
+      # y_test = np.concatenate((y_test,y_uni_test.reshape(test.shape[0],len(targets))), axis =0)
 
-  return X_train, y_train, train_index, X_test, y_test, test_index
+      o_feature_train = np.concatenate((o_feature_train,o_fea_uni_train.reshape(train.shape[0],len(o_features))), axis = 0)
+      # o_feature_test = np.concatenate((o_feature_test,o_fea_uni_test.reshape(test.shape[0],len(o_features))), axis = 0)
+
+  sav_obj = open("x_train_s.pkl", 'wb')
+  pickle.dump(X_train,sav_obj)
+  sav_obj.close()
+
+  sav_obj = open("y_train_s.pkl", 'wb')
+  pickle.dump(y_train,sav_obj)
+  sav_obj.close()
+
+  sav_obj = open("feature_train_s.pkl", 'wb')
+  pickle.dump(o_feature_train,sav_obj)
+  sav_obj.close()
 
 
-def DR(X, variance = 0.8, nb_max = 7, to_plot = False,):
-  """
-  This function does the dimension reduction on the samples
+def lon_lat_juld(name):
+    """
+    """
+    coords = {}
+    file = 'FetchData.pkl'
 
-  Parameters
-  ----------
-  - X: numpy array
-      (nb_samples,features)
-  - variances: float (default = 0.8)
-      The percentage of variances to keep
-  - nb_max: int (default = 5)
-      max number of components considered to plot
-  - to_plot: boolean
-      plot the analysis
+    if name == 'GulfStream':
+        coords = {}
+        coords["up_lon"] = -35
+        coords["low_lon"] = -75
+        coords["up_lat"] = 50
+        coords["low_lat"] = 30
+        name = 'GulfStream_Coords.pkl'
+        # Get a particular region #
+        # get the root path
+        root = os.path.abspath(os.path.join("", '..'))
+        # invoke the global data
+        gl_data = pd.read_pickle(root+"\\data\\"+file)
+        # delete rebundant informations
+        del gl_data['n'],gl_data['profile_n']
+        # get index
+        index = np.where((gl_data['lat'] > coords["low_lat"])*(gl_data['lat'] < coords["up_lat"])*(gl_data['lon']>coords["low_lon"])*(gl_data['lon']<coords["up_lon"]))
+        # region extract
+        region = {v: gl_data[v][index] for v in gl_data}
 
-  Returns
-  -------
-  - X_new: the new X with reduced dimensions
-  """
-  # number of observations
-  n = X.shape[0]
+        coords['lon'] = region['lon']
+        coords['lat'] = region['lat']
+        coords['juld'] = region['juld']
+        coords['profile_ids'] = region['profile_ids']
 
-  # instanciation
-  acp = PCA(svd_solver='full')
-  X_transform = acp.fit_transform(X)
-  print("Number of acp components features= ", acp.n_components_)
-  #variance explained
-  eigval = acp.explained_variance_
+    elif name == 'Kuroshio':
+        coords = {}
+        coords["up_lon"] = 189
+        coords["low_lon"] = 132
+        coords["up_lat"] = 45
+        coords["low_lat"] = 25
+        name = 'Kuroshio_Coords.pkl'
+        # Get a particular region #
+        # get the root path
+        root = os.path.abspath(os.path.join("", '..'))
+        # invoke the global data
+        gl_data = pd.read_pickle(root+"\\data\\"+file)
+        # delete rebundant informations
+        del gl_data['n'],gl_data['profile_n']
+        # get index
+        index = np.where((gl_data['lat'] > coords["low_lat"])*(gl_data['lat'] < coords["up_lat"])*(gl_data['lon']>coords["low_lon"])*(gl_data['lon']<coords["up_lon"]))
+        # region extract
+        region = {v: gl_data[v][index] for v in gl_data}
 
-  # variance of each component
-  variances = acp.explained_variance_ratio_
+        coords['lon'] = region['lon']
+        coords['lat'] = region['lat']
+        coords['juld'] = region['juld']
+        coords['profile_ids'] = region['profile_ids']
 
-  # percentage of variance explained
-  cumsum_var_explained= np.cumsum(variances)
-  print("cumsum variance explained= ",cumsum_var_explained[0:nb_max-1])
+    # save dataset as a .pkl extention
+    sav_obj = open(name, 'wb')
+    pickle.dump(coords,sav_obj)
+    sav_obj.close()
 
-  #get the number of components satisfying the establised variance condition
-  nb_component_features = np.where(cumsum_var_explained>variance)[0][0]
-  acp_features = PCA(svd_solver='full',n_components =nb_component_features+1)
-  X_new = acp_features.fit_transform(X)
-
-  if to_plot:
-
-      plt.figure(figsize=(10,5))
-      plt.plot(np.arange(1,nb_max),variances[0:nb_max-1])
-      plt.scatter(np.arange(1,nb_max),variances[0:nb_max-1])
-      plt.title("Variance explained by each component")
-      plt.ylabel("Variance values")
-      plt.xlabel("Component")
-
-      #scree plot
-      plt.figure(figsize=(15,10))
-
-      plt.subplot(221)
-      plt.plot(np.arange(1,nb_max),eigval[0:nb_max-1])
-      plt.scatter(np.arange(1,nb_max),eigval[0:nb_max-1])
-      plt.title("Scree plot")
-      plt.ylabel("Eigen values")
-      plt.xlabel("Factor number")
-
-      plt.subplot(222)
-      plt.plot(np.arange(1,nb_max),cumsum_var_explained[0:nb_max-1])
-      plt.scatter(np.arange(1,nb_max),cumsum_var_explained[0:nb_max-1])
-      plt.title("Total Variance explained")
-      plt.ylabel("Variance values")
-      plt.xlabel("Factor number")
-
-  return X_new
+    return region
 
 
 def DR(X, variance = 0.8, nb_max = 6, to_plot = False,):
@@ -425,13 +440,14 @@ def EM_GPU(X_np,Y_np,lambda_init,Beta_init,Sigma_init,iter_EM, print_ = False):
 
       ########## M-step
       for k in range(K):
-          Beta_hat[k,:,:]= torch.lstsq(torch.mul(Y,pi_hat[:,k].reshape(n,1)),torch.mul(X,pi_hat[:,k].reshape(n,1)))[0][nb_features,:]
+          # Beta_hat[k,:,:]= torch.lstsq(torch.mul(Y,pi_hat[:,k].reshape(n,1)),torch.mul(X,pi_hat[:,k].reshape(n,1)))[0][nb_features,:]
+          Beta_hat[k,:,:]= torch.inverse(X.T@torch.mul(pi_hat[:,k].reshape(n,1),X))@X.T@torch.mul(pi_hat[:,k].reshape(n,1),Y)
           # Update sigma (formula - 9)
           Sigma_hat[k,:,:]= torch.mul(pi_hat[:,k].reshape(n,1),Y-X@Beta_hat[k,:,:]).T@(Y-X@Beta_hat[k,:,:])/torch.sum(pi_hat[:,k],0)
 
       # Stock the likelihood of each sample for an iteration
       lik_tmp = torch.zeros(n,1).cuda()
-      for i in range(K):
+      for k in range(K):
         lik_tmp = lik_tmp + lambda_hat[k]*torch.exp(MultivariateNormal(X@Beta_hat[k,:,:],Sigma_hat[k,:,:]).log_prob(Y)).reshape(n,1)
 
       log_lik_tmp_np = torch.sum(torch.log(lik_tmp),0).cpu().numpy()
@@ -480,4 +496,4 @@ def BIC(inputs_):
   # Calculate the BIC of the model, in the last EM iteration
   last_log_lik = log_lik[-1][0]
   BIC_ = -2*last_log_lik + Nb_params*np.log(N)
-  return BIC_,log_lik,Nb_params,Beta_hat,Sigma_hat
+  return BIC_,log_lik,Nb_params,Beta_hat,Sigma_hat,lambda_hat
