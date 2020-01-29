@@ -20,6 +20,7 @@ import julian
 import time
 from pylab import *
 import warnings
+import random
 nasa_julian = 98
 cnes_julian = 90
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -340,6 +341,7 @@ def DR(X, variance = 0.8, nb_max = 6, to_plot = False,):
 
   return X_new
 
+
 def spatial_dist(ft,Nlat,Nlon,regname, minlat, maxlat, minlon, maxlon):
     """
     Plot spatial distribution on the maps
@@ -379,6 +381,7 @@ def spatial_dist(ft,Nlat,Nlon,regname, minlat, maxlat, minlon, maxlon):
     cax = divider.append_axes("right", size="5%", pad=0.05)
     plt.colorbar(cax=cax)
     plt.show()
+
 
 
 def temporal_dist(ft, regname):
@@ -426,5 +429,47 @@ def temporal_dist(ft, regname):
     plt.plot(count_years);
     plt.grid()
     plt.xticks(spots,u_year);
-    plt.title('Timely Data Distribution in '+regname);
+    plt.title('Monthly Data Distribution in '+regname);
     plt.ylabel('Nb of profiles');
+
+
+
+def train_test_split(X,y,features,test_per):
+
+    """
+    Split data into train and test sets
+    """
+
+    mask = [i for i in range(len(X))]
+    random.shuffle(mask)
+
+    mask_test = mask[:int(len(X)*test_per)]
+    mask_train = mask[int(len(X)*test_per):]
+
+    x_train, x_test = X[mask_train,:], X[mask_test,:]
+    y_train, y_test = y[mask_train,:], y[mask_test,:]
+    feature_train, feature_test = features[mask_train,:], features[mask_test,:]
+
+    sav_obj = open("x_train.pkl", 'wb')
+    pickle.dump(x_train,sav_obj)
+    sav_obj.close()
+
+    sav_obj = open("x_test.pkl", 'wb')
+    pickle.dump(x_test,sav_obj)
+    sav_obj.close()
+
+    sav_obj = open("y_train.pkl", 'wb')
+    pickle.dump(y_train,sav_obj)
+    sav_obj.close()
+
+    sav_obj = open("y_test.pkl", 'wb')
+    pickle.dump(y_test,sav_obj)
+    sav_obj.close()
+
+    sav_obj = open("feature_train.pkl", 'wb')
+    pickle.dump(feature_train,sav_obj)
+    sav_obj.close()
+
+    sav_obj = open("feature_test.pkl", 'wb')
+    pickle.dump(feature_test,sav_obj)
+    sav_obj.close()

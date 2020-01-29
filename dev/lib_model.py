@@ -216,7 +216,7 @@ def BIC_GPU(inputs_):
   return BIC_,log_lik,Nb_params,Beta_hat,Sigma_hat,lambda_hat
 
 
-def model_test_GPU(inputs_train, nb_class, nb_iter_, iter_EM, nb_features, n_targets,test, save = True, al_targ= False):
+def model_GPU(inputs_train, nb_class, nb_iter_, iter_EM, nb_features, n_targets,nb, save = True, al_targ= False):
   """ test models
   - inputs: list of inputs to model
   - nb_class: list of classes
@@ -224,7 +224,7 @@ def model_test_GPU(inputs_train, nb_class, nb_iter_, iter_EM, nb_features, n_tar
   - iter_EM: ...
   - nb_features: ...
   - n_targets: ...
-  - test: numero of the test
+  - nb: nb th experience
   - save: boolean
   - al_targ: boolean
   """
@@ -265,8 +265,8 @@ def model_test_GPU(inputs_train, nb_class, nb_iter_, iter_EM, nb_features, n_tar
   bic_reshape = bic_arr.reshape(nb_iter_,len(nb_class),order='F')
   # save to .txt
   if save:
-    np.savetxt('BIC_test_'+str(test)+'.txt', bic_reshape)
-    np.savetxt('Log_test_'+str(test)+'.txt', Log_lik.reshape(len_class*nb_iter_,iter_EM))
-    np.savetxt('Beta_test_'+str(test)+'.txt', Beta.reshape(len_class*np.sum(np.asarray(nb_class))*nb_features*n_targets))
-    np.savetxt('Sigma_test_'+str(test)+'.txt', Sigma.reshape(len_class*np.sum(np.asarray(nb_class))*n_targets*n_targets))
-    np.savetxt('Lamda_test_'+str(test)+'.txt', Lamda.reshape(len_class*np.sum(np.asarray(nb_class))*1))
+    np.savetxt('BIC_E'+str(nb)+'.txt', bic_reshape)
+    np.savetxt('Log_E'+str(nb)+'.txt', Log_lik.reshape(len_class*nb_iter_,iter_EM))
+    np.savetxt('Beta_E'+str(nb)+'.txt', Beta.reshape(len_class*np.sum(np.asarray(nb_class))*nb_features*n_targets))
+    np.savetxt('Sigma_E'+str(nb)+'.txt', Sigma.reshape(len_class*np.sum(np.asarray(nb_class))*n_targets*n_targets))
+    np.savetxt('Lamda_E'+str(nb)+'.txt', Lamda.reshape(len_class*np.sum(np.asarray(nb_class))*1))

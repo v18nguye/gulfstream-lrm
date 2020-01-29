@@ -9,6 +9,7 @@ from pylab import *
 from multiprocessing import Pool
 import pickle
 import os
+import torch
 import julian
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -21,6 +22,7 @@ nasa_julian = 98
 cnes_julian = 90
 import warnings
 warnings.filterwarnings('ignore')
+from sklearn.metrics import r2_score
 
 
 def y_hat_esti(X_,y_,Beta,Sigma,Lambda,n):
@@ -87,11 +89,12 @@ def bic_box(bic,nb_class):
   ylabel("BIC")
 
 
-def extract_bsl(beta_,sigma_,lambda_,X,y,nb_class,th_class,test):
+def extract_bsl(beta_,sigma_,lambda_,X,y,nb_class,th_class,nb):
   """
     Etract beta, sigma, lambda of a specific class
 
     - th_class: the class number extracted
+    - nb th experience
 
   """
 
@@ -105,11 +108,11 @@ def extract_bsl(beta_,sigma_,lambda_,X,y,nb_class,th_class,test):
 
     if nb_class[c] == th_class:
 
-      beta = open('beta'+str(test)+'_'+str(th_class)+'.pkl', 'wb')
+      beta = open('beta_E'+str(nb)+'_'+str(th_class)+'.pkl', 'wb')
       pickle.dump(beta_c, beta)
-      sigma = open('sigma'+str(test)+'_'+str(th_class)+'.pkl', 'wb')
+      sigma = open('sigma_E'+str(nb)+'_'+str(th_class)+'.pkl', 'wb')
       pickle.dump(sigma_c, sigma)
-      lambda_ = open('lambda'+str(test)+'_'+str(th_class)+'.pkl', 'wb')
+      lambda_ = open('lambda_E'+str(nb)+'_'+str(th_class)+'.pkl', 'wb')
       pickle.dump(lambda_c, lambda_)
       beta.close()
       sigma.close()
@@ -121,12 +124,14 @@ def extract_bsl(beta_,sigma_,lambda_,X,y,nb_class,th_class,test):
     th = th +1
 
 
-def y_eval(beta_,sigma_,lambda_,X,y,nb_class,coln,row, save,test):
+def y_eval(beta_,sigma_,lambda_,X,y,nb_class,coln,row, save,nb, test):
+
   """
     Evaluate the y and  its estimation
 
   - save: the class saved for result visualization
-  - test: the number of test
+  - test: if test True, save as test result
+  - nb: nb th experience
   """
 
   index = 0
@@ -143,26 +148,32 @@ def y_eval(beta_,sigma_,lambda_,X,y,nb_class,coln,row, save,test):
 
     # save interesting class
     if nb_class[c] == save:
-      np.savetxt('y_hat'+str(test)+'_'+str(nb_class[c])+'.txt',y_esti)
+        if test:
+            np.savetxt('y_h_test_E'+str(nb)+'_'+str(nb_class[c])+'.txt',y_esti)
+        else:
+            np.savetxt('y_h_train_E'+str(nb)+'_'+str(nb_class[c])+'.txt',y_esti)
 
     plt.subplot(row, coln, c+1)
-    plt.scatter(y,y_esti, marker = ".", s = markers, c ='b')
+
+    plt.scatter(y,y_esti, marker = ".", s = markers, c ='b', label = "r2_score = " +str(r2_score(y, y_esti)))
     plt.plot(x_linsp,x_linsp,'k')
     plt.ylabel('Predicted Temperature')
     plt.xlabel('GT Temperature')
     plt.title('Model with: '+str(nb_class[c])+' classes')
-
+    plt.legend()
     index = index + nb_class[th]
     th = th +1
 
 
-def pi_hat(X_,y_,Beta,Sigma,Lambda,n,test,th_class):
+def pi_hat(X_,y_,Beta,Sigma,Lambda,n,nb,th_class, test):
   """ Estimate p_hat
 
   - Beta: (K,nb_fea,nb_tar)
   - Sigma: (K,nb_tar,nb_tar)
   - Lambda: (K,1)
   - n: nb of samples
+  - nb: nb th experience
+  - test : if test is true, save file as test
   """
 
   K  = Beta.shape[0]
@@ -191,10 +202,13 @@ def pi_hat(X_,y_,Beta,Sigma,Lambda,n,test,th_class):
 
   pi_hat_np = pi_hat.cpu().numpy()
 
-  np.savetxt('pi_hat_'+str(test)+'_'+str(th_class)+'.txt',pi_hat_np)
+  if test:
+      np.savetxt('pi_h_test_E'+str(nb)+'_'+str(th_class)+'.txt',pi_hat_np)
+  else:
+      np.savetxt('pi_h_train_E'+str(nb)+'_'+str(th_class)+'.txt',pi_hat_np)
 
 
-def prior_prob_time_plot(pi_hat,juld_test, K, m, figx =10, figy = 10):
+def prior_prob_time_plot(pi_hat,juld_test, K, m, title,figx =10, figy = 10):
     """
     - K: number of classes
     - m: size of the windows
@@ -207,7 +221,6 @@ def prior_prob_time_plot(pi_hat,juld_test, K, m, figx =10, figy = 10):
 
     days = np.linspace(1,365,365).astype(int)
 
-    plt.figure(figsize=(10,6))
     for day in days:
         day_mask = np.where(days_in_year == day)
         if size(day_mask) != 0:
@@ -224,19 +237,25 @@ def prior_prob_time_plot(pi_hat,juld_test, K, m, figx =10, figy = 10):
             w = prior_prob_days[:,k*len(mask):(k+1)*len(mask)]
             prior_prob_days_mean[:, k] = w@mask
         else:
-            w = prior_prob_days[:,k*len(mask)-0:(k+1)*len(mask)-0]
+            w = prior_prob_days[:,k*len(mask) - int(len(mask)/2):k*len(mask)+len(mask) -int(len(mask)/2)]
             prior_prob_days_mean[:, k] = w@mask
 
     days_mean = np.asarray([i for i in range(segment)])*m
+    x_labels = ['Jan','Feb','Mar','Apr','May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    spots = np.asarray([30*i for i in range(12)])
+
 
     figure(num=None, figsize=(figx, figy), dpi=80, facecolor='w', edgecolor='k')
     for k in range(K):
         plt.scatter(days_mean[:-2],prior_prob_days_mean[k,:-2])
         plt.plot(days_mean[:-2],prior_prob_days_mean[k,:-2], label = 'Mode-'+str(k+1))
         plt.legend()
-        plt.ylabel('priori probability')
-        plt.xlabel('days')
-        plt.title('Priori probability variation in time')
+        plt.xticks(spots,x_labels);
+        plt.ylabel('Priori Probability')
+        plt.xlabel('Day')
+        plt.title(title)
+        plt.grid(True)
+
 
 def temp_plot(lon_test,lat_test,map,temp):
     "Plot surface temperature"
@@ -257,7 +276,7 @@ def temp_plot(lon_test,lat_test,map,temp):
     cax = divider.append_axes("right", size="5%", pad=0.05)
     plt.colorbar(cax=cax)
 
-def pcolor_surface(lon, lat, Nlon, Nlat, map,temp, title):
+def pcolor_surface(lon, lat, Nlon, Nlat, map,temp, title, combine = False, subplot = 221):
     """
     pcolor plot for sea surface temperature
 
@@ -279,7 +298,8 @@ def pcolor_surface(lon, lat, Nlon, Nlat, map,temp, title):
         Temp[i,j] += temp[k]
         Freq[i,j] += 1
 
-    figure(num=None, figsize=(10, 10), dpi=80, facecolor='w', edgecolor='k')
+    if combine:
+        plt.subplot(subplot)
     ax = plt.gca()
     temp_avg = np.divide(Temp,Freq)
     plon, plat = map(xlon, xlat)
@@ -338,6 +358,7 @@ def follow_x(index_,coords_g,priode_,X,f_x,std_x,pi_hat,beta,lambda_,sigma,gt_te
 
     return daysx,tempx
 
+
 def follow_x_plot(daysx,tempx,prof,step = 1):
     """
     Plot evolution of sea surface temperature at a specific coordinate
@@ -357,9 +378,11 @@ def follow_x_plot(daysx,tempx,prof,step = 1):
     plt.title("Sea Surface Temperature Evolution ");
     plt.ylabel("Temperature C")
     plt.xlabel("Year")
+    plt.grid(True)
     plt.legend()
 
-def mode_dist(lon_test,lat_test,map,pi_hat):
+
+def mode_dist(lon_test,lat_test,map,pi_hat, title, combine = False, subplot = 221):
     "Plot dynamical mode distributions"
 
     lons = lon_test
@@ -371,7 +394,9 @@ def mode_dist(lon_test,lat_test,map,pi_hat):
     modes = np.unique(dominant_mode)
     colors = ['tab:red','tab:green','tab:orange','tab:blue','tab:purple']
 
-    fig, ax = plt.subplots(figsize=(12, 12))
+    if combine:
+        plt.subplot(subplot)
+
     for m in list(modes):
         mask = np.where(dominant_mode == m)
         x_mask = x[mask]
@@ -380,4 +405,5 @@ def mode_dist(lon_test,lat_test,map,pi_hat):
         dominants = dominant_mode[mask]
         map.scatter(x_mask, y_mask, c = colors[m], label = "mode"+str(m+1), s = markers)
     map.drawcoastlines()
-    ax.legend()
+    plt.legend()
+    plt.title(title)
