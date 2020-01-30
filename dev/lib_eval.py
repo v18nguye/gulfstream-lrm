@@ -165,6 +165,47 @@ def y_eval(beta_,sigma_,lambda_,X,y,nb_class,coln,row, save,nb, test):
     th = th +1
 
 
+def sal_eval(beta_,sigma_,lambda_,X,y,nb_class,coln,row, save,nb, test,  fx1 =30 , fx2 = 40):
+
+  """
+    Evaluate the y and  its estimation
+
+  - save: the class saved for result visualization
+  - test: if test True, save as test result
+  - nb: nb th experience
+  """
+
+  index = 0
+  th = 0
+
+  figure(num=None, figsize=(15, 15), dpi=80, facecolor='w', edgecolor='k')
+  x_linsp = np.linspace(fx1,fx2,50)
+  markers = 0.1*np.full((y.shape[0], 1), 1)
+  for c in range(len(nb_class)):
+    beta_c = beta_[c,index:index + nb_class[th],:,:]
+    sigma_c = sigma_[c,index:index + nb_class[th],:,:]
+    lambda_c = lambda_[c,index:index + nb_class[th],:]
+    y_esti,_ = y_hat_esti(X,y,beta_c,sigma_c,lambda_c,X.shape[0])
+
+    # save interesting class
+    if nb_class[c] == save:
+        if test:
+            np.savetxt('y_h_test_E'+str(nb)+'_'+str(nb_class[c])+'.txt',y_esti)
+        else:
+            np.savetxt('y_h_train_E'+str(nb)+'_'+str(nb_class[c])+'.txt',y_esti)
+
+    plt.subplot(row, coln, c+1)
+
+    plt.scatter(y,y_esti, marker = ".", s = markers, c ='b', label = "r2_score = " +str(r2_score(y, y_esti)))
+    plt.plot(x_linsp,x_linsp,'k')
+    plt.ylabel('Predicted Salanity')
+    plt.xlabel('GT Salanity')
+    plt.title('Model with: '+str(nb_class[c])+' classes')
+    plt.legend()
+    index = index + nb_class[th]
+    th = th +1
+
+
 def pi_hat(X_,y_,Beta,Sigma,Lambda,n,nb,th_class, test):
   """ Estimate p_hat
 
@@ -246,9 +287,11 @@ def prior_prob_time_plot(pi_hat,juld_test, K, m, title,figx =10, figy = 10):
 
 
     figure(num=None, figsize=(figx, figy), dpi=80, facecolor='w', edgecolor='k')
+    colors = ['r', 'g', 'b', 'c', 'm', 'y']
+
     for k in range(K):
-        plt.scatter(days_mean[:-2],prior_prob_days_mean[k,:-2])
-        plt.plot(days_mean[:-2],prior_prob_days_mean[k,:-2], label = 'Mode-'+str(k+1))
+        plt.scatter(days_mean[:-2],prior_prob_days_mean[k,:-2], color = colors[k])
+        plt.plot(days_mean[:-2],prior_prob_days_mean[k,:-2], label = 'Mode-'+str(k+1), color=colors[k])
         plt.legend()
         plt.xticks(spots,x_labels);
         plt.ylabel('Priori Probability')
@@ -276,7 +319,7 @@ def temp_plot(lon_test,lat_test,map,temp):
     cax = divider.append_axes("right", size="5%", pad=0.05)
     plt.colorbar(cax=cax)
 
-def pcolor_surface(lon, lat, Nlon, Nlat, map,temp, title, combine = False, subplot = 221):
+def pcolor_surface(lon, lat, Nlon, Nlat, map,temp, title, combine = False, subplot = 221, cmap_temp = True):
     """
     pcolor plot for sea surface temperature
 
@@ -304,7 +347,13 @@ def pcolor_surface(lon, lat, Nlon, Nlat, map,temp, title, combine = False, subpl
     temp_avg = np.divide(Temp,Freq)
     plon, plat = map(xlon, xlat)
     xxlon,xxlat = meshgrid(plon,plat)
-    cmap = 'coolwarm'
+
+    if cmap_temp:
+
+        cmap = 'coolwarm'
+    else:
+        cmap = 'jet'
+
     map.contourf(xxlon, xxlat, temp_avg, cmap = cmap)
     plt.title(title)
     map.drawcoastlines()
@@ -359,7 +408,7 @@ def follow_x(index_,coords_g,priode_,X,f_x,std_x,pi_hat,beta,lambda_,sigma,gt_te
     return daysx,tempx
 
 
-def follow_x_plot(daysx,tempx,prof,step = 1):
+def follow_x_plot(daysx,tempx,prof,step = 1,  temp = True):
     """
     Plot evolution of sea surface temperature at a specific coordinate
 
@@ -375,9 +424,14 @@ def follow_x_plot(daysx,tempx,prof,step = 1):
     fig, ax = plt.subplots(figsize=(15, 6))
     plot(np.asarray(tempx), label = "Profile: "+str(prof));
     plt.xticks(spots,u_year);
-    plt.title("Sea Surface Temperature Evolution ");
-    plt.ylabel("Temperature C")
-    plt.xlabel("Year")
+    if temp == True:
+        plt.title("Sea Surface Temperature Evolution ");
+        plt.ylabel("Temperature C")
+        plt.xlabel("Year")
+    else:
+        plt.title("Sea Surface Salanity Evolution ");
+        plt.ylabel("Salanity")
+        plt.xlabel("Year")
     plt.grid(True)
     plt.legend()
 
@@ -392,7 +446,7 @@ def mode_dist(lon_test,lat_test,map,pi_hat, title, combine = False, subplot = 22
     dominant_mode = np.argmax(pi_hat, axis = 1)
 
     modes = np.unique(dominant_mode)
-    colors = ['tab:red','tab:green','tab:orange','tab:blue','tab:purple']
+    colors = ['r', 'g', 'b', 'c', 'm', 'y']
 
     if combine:
         plt.subplot(subplot)
