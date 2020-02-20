@@ -144,23 +144,24 @@ def y_eval(beta_,sigma_,lambda_,X,y,nb_class,coln,row, save,nb, test):
     beta_c = beta_[c,index:index + nb_class[th],:,:]
     sigma_c = sigma_[c,index:index + nb_class[th],:,:]
     lambda_c = lambda_[c,index:index + nb_class[th],:]
-    y_esti,_ = y_hat_esti(X,y,beta_c,sigma_c,lambda_c,X.shape[0])
+    # y_esti,_ = y_hat_esti(X,y,beta_c,sigma_c,lambda_c,X.shape[0])
 
     # save interesting class
     if nb_class[c] == save:
+        y_esti,_ = y_hat_esti(X,y,beta_c,sigma_c,lambda_c,X.shape[0]) ## new
         if test:
             np.savetxt('y_h_test_E'+str(nb)+'_'+str(nb_class[c])+'.txt',y_esti)
         else:
             np.savetxt('y_h_train_E'+str(nb)+'_'+str(nb_class[c])+'.txt',y_esti)
 
-    plt.subplot(row, coln, c+1)
-
-    plt.scatter(y,y_esti, marker = ".", s = markers, c ='b', label = "r2_score = " +str(r2_score(y, y_esti)))
-    plt.plot(x_linsp,x_linsp,'k')
-    plt.ylabel('Predicted Temperature')
-    plt.xlabel('GT Temperature')
-    plt.title('Model with: '+str(nb_class[c])+' classes')
-    plt.legend()
+    # plt.subplot(row, coln, c+1)
+    #
+    # plt.scatter(y,y_esti, marker = ".", s = markers, c ='b', label = "r2_score = " +str(r2_score(y, y_esti)))
+    # plt.plot(x_linsp,x_linsp,'k')
+    # plt.ylabel('Predicted Temperature')
+    # plt.xlabel('GT Temperature')
+    # plt.title('Model with: '+str(nb_class[c])+' classes')
+    # plt.legend()
     index = index + nb_class[th]
     th = th +1
 
@@ -319,6 +320,61 @@ def temp_plot(lon_test,lat_test,map,temp):
     cax = divider.append_axes("right", size="5%", pad=0.05)
     plt.colorbar(cax=cax)
 
+def surface_interpolate(lon, lat, pres, Nlon, Nlat, map,data, title, pres_lev, neigboors, combine = False, subplot = 221, cmap_temp = True):
+    """
+    data interpolation at a depth level
+
+    - lat: latitude of the data
+    - lon: longitude of the data
+    - neigboors: for selecting the interpolated region having data
+    - Nlon: number of point discritizing the longitude
+    - Nlat: number of point discritizing the latitude
+    - pres_lev: a determined pressure at which we present data
+    """
+
+    # create a 2D coordinate grid
+    xlat = np.linspace(min(lat),max(lat),Nlat)
+    ylon = np.linspace(min(lon),max(lon),Nlon)
+
+    yylon, xxlat = np.meshgrid(ylon,xlat)
+    xxlat = xxlat.reshape(xxlat.shape[0]*xxlat.shape[1],1)
+    yylon = yylon.reshape(xxlat.shape[0]*xxlat.shape[1],1)
+    zzdepth = pres_lev*np.ones((xxlat.shape[0]*xxlat.shape[1],1))
+
+    # interpolation on the 2D grid at the pressure = pres_lev
+    N = lon.shape[0]
+    features = np.concatenate((lat.reshape(N,1),lon.reshape(N,1), pres.reshape(N,1)),axis = 1)
+    points = np.concatenate((xxlat,yylon,zzdepth),axis = 1)
+    data_interpol = griddata(features,data,points, rescale=True)
+    data_interpol = data_interpol.reshape(Nlat,Nlon)
+
+    # select interpolated region where the data exists
+    mask_region = np.ones((Nlat,Nlon)) < 2
+    for k in range(N):
+        i = np.argmin(abs(xlat - lat[k]))
+        j = np.argmin(abs(ylon - lon[k]))
+        mask_region[i-neigboors:i+neigboors,j-neigboors:j+neigboors] = False
+    data_interpol[mask_region] = nan
+
+    if combine:
+        plt.subplot(subplot)
+    ax = plt.gca()
+    plon, plat = map(ylon, xlat)
+    xxlon,xxlat = meshgrid(plon,plat)
+
+    if cmap_temp:
+
+        cmap = 'coolwarm'
+    else:
+        cmap = 'jet'
+
+    map.contourf(xxlon, xxlat, data_interpol, cmap = cmap)
+    plt.title(title)
+    map.drawcoastlines()
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    plt.colorbar(cax=cax)
+
 def pcolor_surface(lon, lat, Nlon, Nlat, map,temp, title, combine = False, subplot = 221, cmap_temp = True):
     """
     pcolor plot for sea surface temperature
@@ -458,6 +514,23 @@ def mode_dist(lon_test,lat_test,map,pi_hat, title, combine = False, subplot = 22
         markers = np.full((len(mask), 1), 1)
         dominants = dominant_mode[mask]
         map.scatter(x_mask, y_mask, c = colors[m], label = "mode"+str(m+1), s = markers)
+    map.drawcoastlines()
+    plt.legend()
+    plt.title(title)
+
+
+def mode(lon_test,lat_test,map,pi_hat, m, title, combine = False, subplot = 221):
+    "Plot dynamical mode distributions"
+
+    lons = lon_test
+    lats = lat_test
+    x, y = map(lons, lats)
+
+    if combine:
+        plt.subplot(subplot)
+
+    markers = np.full((len(pi_hat), 1), 1)
+    map.scatter(x, y, c = pi_hat, label = "mode"+str(m+1), s = markers)
     map.drawcoastlines()
     plt.legend()
     plt.title(title)
