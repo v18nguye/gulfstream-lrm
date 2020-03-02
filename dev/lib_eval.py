@@ -593,15 +593,15 @@ def temp_dyna_mode_var(pi_hat, lon, lat, juld,  pres, sel_lat, sel_lon, sel_pres
         for mod in range(N):
             mon_mod_pri[d,mod] = np.mean(ex_priori[day_mask,mod])
 
+    # find trend of temporal dynamical modes
+    for id_ in range(N):
+        mon_mod_pri[~np.isnan(mon_mod_pri[:,id_]),id_] = sm.tsa.filters.hpfilter(mon_mod_pri[~np.isnan(mon_mod_pri[:,id_]),id_], thres)[1]
+
     # select pairs of modes which together have a preferring most negative correlation
     mod_bag =  range(8)
     perms = list(permutations(mod_bag,2))
     pearson_coeffs = [stats.pearsonr(mon_mod_pri[~np.isnan(mon_mod_pri[:,k[0]]),k[0]], mon_mod_pri[~np.isnan(mon_mod_pri[:,k[1]]),k[1]])[0] for k in perms]
     selected_perms  = []
-
-    # find trend of temporal dynamical modes
-    for id_ in range(N):
-        mon_mod_pri[~np.isnan(mon_mod_pri[:,id_]),id_] = sm.tsa.filters.hpfilter(mon_mod_pri[~np.isnan(mon_mod_pri[:,id_]),id_], thres)[1]
 
     while(len(perms) != 0):
 
@@ -625,7 +625,7 @@ def temp_dyna_mode_var(pi_hat, lon, lat, juld,  pres, sel_lat, sel_lon, sel_pres
         for del_pearson in delete_pearson:
             pearson_coeffs.remove(del_pearson)
 
-    fig = plt.figure(figsize = (20,15))
+    fig = plt.figure(figsize = (20,10))
     subplots_adjust(wspace = 0.2, hspace = 0.2)
     for count, sel_item in enumerate(selected_perms):
         pearson_coeff = stats.pearsonr(mon_mod_pri[~np.isnan(mon_mod_pri[:,sel_item[0]]),sel_item[0]], mon_mod_pri[~np.isnan(mon_mod_pri[:,sel_item[1]]),sel_item[1]])[0]
