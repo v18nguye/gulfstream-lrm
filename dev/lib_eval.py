@@ -470,7 +470,7 @@ def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pre
     lev_lat = lat[mask_lev]
     lev_lon = lon[mask_lev]
     lev_gt = gt_targ[mask_lev]
-    lev_est = gt_targ[mask_lev]
+    lev_est = est_targ[mask_lev]
     lev_error = error[mask_lev]
 
     N = lev_lon.shape[0]
@@ -579,10 +579,10 @@ def spa_dyna_mode_dis(pi_hat, lon, lat, Nlat, Nlon, pres, h_depth,l_depth, inter
 
     ## Extract data
     data_mask = np.where((pres >= h_depth)*(pres <= l_depth))
-    extracted_priors = pi_hat[data_mask[0],:][:10000,:]
-    lev_lon = lon[data_mask[0]][:10000]
-    lev_lat = lat[data_mask[0]][:10000]
-    lev_pres = pres[data_mask[0]][:10000]
+    extracted_priors = pi_hat[data_mask[0],:]
+    lev_lon = lon[data_mask[0]]
+    lev_lat = lat[data_mask[0]]
+    lev_pres = pres[data_mask[0]]
 
     N = lev_lon.shape[0]
     features = np.concatenate((lev_lat.reshape(N,1),lev_lon.reshape(N,1),lev_pres.reshape(N,1)),axis = 1)
@@ -659,6 +659,7 @@ def spa_dyna_mode_dis(pi_hat, lon, lat, Nlat, Nlon, pres, h_depth,l_depth, inter
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)
             plt.colorbar(cax=cax)
+
 ###############################
 ## Plot the seasonal variation#
 ###############################
