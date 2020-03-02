@@ -17,6 +17,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import copy
 from scipy.interpolate import griddata
 from scipy.stats import multivariate_normal as mn
+from itertools import permutations
+from scipy import stats
 from matplotlib.pyplot import figure
 #import torch
 from torch.distributions.multivariate_normal import MultivariateNormal
@@ -549,9 +551,97 @@ def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pre
     cax3 = divider.append_axes("right", size="5%", pad=0.05)
     plt.colorbar(cax=cax3)
 
-###################################
-## Plot spatial mode distribution #
-###################################
+############################################
+# Plot temporal dynamical mode distribution#
+############################################
+def temp_dyna_mode_var(pi_hat, lon, lat, juld,  pres, sel_lat, sel_lon, sel_pres, lon_thres, lat_thres, pres_thres, thres = 20):
+    """
+    Plot temporal dynamical mode variation in a specific region in the ocean
+
+    Args:
+    -----
+    - pi_hat: priors of dynamical modes
+    - lon: global longitude
+    - lat: global latitude
+    - pres: global pressure
+    - sel_lon: selected longitude
+    - sel_lat: selected latitude
+    - lon_thres: longitude threshold
+    - thres: threshold for dynamical trends
+    ...
+
+    """
+
+    lat_mask = np.abs(lat - sel_lat) < lat_thres
+    lon_mask = np.abs(lon - sel_lon) < lon_thres
+    pres_mask = np.abs(pres - sel_pres) < pres_thres
+    mask = lat_mask*lon_mask*pres_mask
+
+    # extracted julian days and mode's priori
+    ex_jul = juld[mask]
+    encoded_juld = [julian.from_jd(round(x), fmt='mjd') for x in ex_jul]
+    days_in_year =  np.asarray([x.day + (x.month -1)*30 for x in encoded_juld])
+    ex_priori = pi_hat[mask,:]
+
+    # monthly mode priors and its variances
+    N = pi_hat.shape[1]
+    mon_mod_pri = np.zeros((365,N))
+
+    # cacluate the mode's prior for each day
+    for d in tqdm(range(365), disable=False):
+        day_mask = days_in_year == d
+        for mod in range(N):
+            mon_mod_pri[d,mod] = np.mean(ex_priori[day_mask,mod])
+
+    # select pairs of modes which together have a preferring most negative correlation
+    mod_bag =  range(8)
+    perms = list(permutations(mod_bag,2))
+    pearson_coeffs = [stats.pearsonr(mon_mod_pri[~np.isnan(mon_mod_pri[:,k[0]]),k[0]], mon_mod_pri[~np.isnan(mon_mod_pri[:,k[1]]),k[1]])[0] for k in perms]
+    selected_perms  = []
+
+    # find trend of temporal dynamical modes
+    for id_ in range(N):
+        mon_mod_pri[~np.isnan(mon_mod_pri[:,id_]),id_] = sm.tsa.filters.hpfilter(mon_mod_pri[~np.isnan(mon_mod_pri[:,id_]),id_], thres)[1]
+
+    while(len(perms) != 0):
+
+        delete_items = []
+        delete_pearson = []
+
+        max_index = np.argmin(pearson_coeffs)
+        selected_perms.append(perms[max_index])
+
+        delete_items.append(perms[max_index])
+        delete_pearson.append(pearson_coeffs[max_index])
+
+        for index, item in enumerate(perms):
+            if item[0] == perms[max_index][0] or item[1] == perms[max_index][1] or item[0] == perms[max_index][1] or item[1] == perms[max_index][0]:
+                if delete_items.count(item) == 0:
+                    delete_items.append(item)
+                    delete_pearson.append(pearson_coeffs[index])
+
+        for del_item in delete_items:
+            perms.remove(del_item)
+        for del_pearson in delete_pearson:
+            pearson_coeffs.remove(del_pearson)
+
+    fig = plt.figure(figsize = (20,15))
+    subplots_adjust(wspace = 0.2, hspace = 0.2)
+    for count, sel_item in enumerate(selected_perms):
+        pearson_coeff = stats.pearsonr(mon_mod_pri[~np.isnan(mon_mod_pri[:,sel_item[0]]),sel_item[0]], mon_mod_pri[~np.isnan(mon_mod_pri[:,sel_item[1]]),sel_item[1]])[0]
+        plt.subplot(221+count)
+        plt.plot(mon_mod_pri[:,sel_item[0]], label = 'Dyn-Mode-'+str(sel_item[0]+1))
+        plt.plot(mon_mod_pri[:,sel_item[1]], label = 'Dyn-Mode - '+str(sel_item[1]+1))
+        plt.title('Pearson-coeff= %.2f'%pearson_coeff)
+        x_labels = ['Jan','Feb','Mar','Apr','May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        spots = np.asarray([30*i for i in range(12)])
+        plt.xticks(spots,x_labels)
+        plt.grid(True)
+        plt.legend()
+
+#############################################
+## Plot spatial dynamical mode distribution #
+#############################################
 def spa_dyna_mode_dis(pi_hat, lon, lat, Nlat, Nlon, pres, h_depth,l_depth, inter_depth,neigboors, map):
     """
     Plot the spatial dynamical mode distribution between two depth levels in the ocean.
