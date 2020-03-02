@@ -9,6 +9,7 @@ from pylab import *
 from multiprocessing import Pool
 import pickle
 import os
+import statsmodels.api as sm
 import torch
 import julian
 import matplotlib.pyplot as plt
@@ -752,14 +753,14 @@ def sea_temp_plot(p_index,coords,X, gt_temp, est_temp, t1, t2, t3, lat_thres = 3
     plt.xticks(spots,x_labels)
     plt.legend()
 
-def index_extract(p_index,lat,lon,juld,X,lat_thres = lat_thres, lon_thres = lon_thres, date_thres = date_thres, depth_thres = depth_thres, patch = True):
+def index_extract(p_index,lat,lon,juld,X,lat_thres, lon_thres, date_thres, depth_thres, patch = True):
     """
     Extract indexes in specific conditions
     """
 
     depth_point = X[:,-1][p_index]
-    lat_point  = lon[p_index]
-    lon_point = lat[p_index]
+    lat_point  = lat[p_index]
+    lon_point = lon[p_index]
     date_point = juld[p_index]
 
     depth_mask = np.abs(X[:,-1] - depth_point) < depth_thres
@@ -767,6 +768,5 @@ def index_extract(p_index,lat,lon,juld,X,lat_thres = lat_thres, lon_thres = lon_
     lon_mask = np.abs(lon - lon_point) < lon_thres
     date_mask = np.abs(juld - date_point) < date_thres
 
-    index = np.where(depth_mask*lat_mask*lon_mask*date_mask)
-
+    index = np.where(depth_mask*lat_mask*lon_mask*date_mask)[0]
     return index
