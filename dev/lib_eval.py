@@ -14,6 +14,7 @@ import julian
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import copy
+from scipy.interpolate import griddata
 from scipy.stats import multivariate_normal as mn
 from matplotlib.pyplot import figure
 #import torch
@@ -320,103 +321,6 @@ def temp_plot(lon_test,lat_test,map,temp):
     cax = divider.append_axes("right", size="5%", pad=0.05)
     plt.colorbar(cax=cax)
 
-def surface_interpolate(lon, lat, pres, Nlon, Nlat, map,data, title, pres_lev, neigboors, combine = False, subplot = 221, cmap_temp = True):
-    """
-    data interpolation at a depth level
-
-    - lat: latitude of the data
-    - lon: longitude of the data
-    - neigboors: for selecting the interpolated region having data
-    - Nlon: number of point discritizing the longitude
-    - Nlat: number of point discritizing the latitude
-    - pres_lev: a determined pressure at which we present data
-    """
-
-    # create a 2D coordinate grid
-    xlat = np.linspace(min(lat),max(lat),Nlat)
-    ylon = np.linspace(min(lon),max(lon),Nlon)
-
-    yylon, xxlat = np.meshgrid(ylon,xlat)
-    xxlat = xxlat.reshape(xxlat.shape[0]*xxlat.shape[1],1)
-    yylon = yylon.reshape(xxlat.shape[0]*xxlat.shape[1],1)
-    zzdepth = pres_lev*np.ones((xxlat.shape[0]*xxlat.shape[1],1))
-
-    # interpolation on the 2D grid at the pressure = pres_lev
-    N = lon.shape[0]
-    features = np.concatenate((lat.reshape(N,1),lon.reshape(N,1), pres.reshape(N,1)),axis = 1)
-    points = np.concatenate((xxlat,yylon,zzdepth),axis = 1)
-    data_interpol = griddata(features,data,points, rescale=True)
-    data_interpol = data_interpol.reshape(Nlat,Nlon)
-
-    # select interpolated region where the data exists
-    mask_region = np.ones((Nlat,Nlon)) < 2
-    for k in range(N):
-        i = np.argmin(abs(xlat - lat[k]))
-        j = np.argmin(abs(ylon - lon[k]))
-        mask_region[i-neigboors:i+neigboors,j-neigboors:j+neigboors] = False
-    data_interpol[mask_region] = nan
-
-    if combine:
-        plt.subplot(subplot)
-    ax = plt.gca()
-    plon, plat = map(ylon, xlat)
-    xxlon,xxlat = meshgrid(plon,plat)
-
-    if cmap_temp:
-
-        cmap = 'coolwarm'
-    else:
-        cmap = 'jet'
-
-    map.contourf(xxlon, xxlat, data_interpol, cmap = cmap)
-    plt.title(title)
-    map.drawcoastlines()
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes("right", size="5%", pad=0.05)
-    plt.colorbar(cax=cax)
-
-def pcolor_surface(lon, lat, Nlon, Nlat, map,temp, title, combine = False, subplot = 221, cmap_temp = True):
-    """
-    pcolor plot for sea surface temperature
-
-    - Nlon: number of point discritizing the longitude
-    - Nlat: number of point discritizing the latitude
-    """
-
-    xlat = np.linspace(min(lat),max(lat),Nlat)
-    xlon = np.linspace(min(lon),max(lon),Nlon)
-
-    Temp = np.zeros((xlat.shape[0],xlon.shape[0]))
-    Freq = np.zeros((xlat.shape[0],xlon.shape[0]))
-
-    N = lon.shape[0]
-
-    for k in range(N):
-        i = np.argmin(abs(xlat - lat[k]))
-        j = np.argmin(abs(xlon - lon[k]))
-        Temp[i,j] += temp[k]
-        Freq[i,j] += 1
-
-    if combine:
-        plt.subplot(subplot)
-    ax = plt.gca()
-    temp_avg = np.divide(Temp,Freq)
-    plon, plat = map(xlon, xlat)
-    xxlon,xxlat = meshgrid(plon,plat)
-
-    if cmap_temp:
-
-        cmap = 'coolwarm'
-    else:
-        cmap = 'jet'
-
-    map.contourf(xxlon, xxlat, temp_avg, cmap = cmap)
-    plt.title(title)
-    map.drawcoastlines()
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes("right", size="5%", pad=0.05)
-    plt.colorbar(cax=cax)
-
 def follow_x(index_,coords_g,priode_,X,f_x,std_x,pi_hat,beta,lambda_,sigma,gt_temp):
     "Following the temperature evolution of a point x"
 
@@ -534,3 +438,335 @@ def mode(lon_test,lat_test,map,pi_hat, m, title, combine = False, subplot = 221)
     map.drawcoastlines()
     plt.legend()
     plt.title(title)
+#########################################
+## Plot spatial temperature distribution#
+#########################################
+def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pres_lev, neigboors, cmap_temp = True):
+    """
+    target prediction in time and space
+
+    - lat: latitude of the data
+    - lon: longitude of the data
+    - neigboors: for selecting the interpolated region
+    - Nlon: number of point discritizing the longitude
+    - Nlat: number of point discritizing the latitude
+    - pres_lev: a determined pressure at which we present data ± 15
+    """
+
+    # create a 2D coordinate grid
+    xlat = np.linspace(min(lat),max(lat),Nlat)
+    ylon = np.linspace(min(lon),max(lon),Nlon)
+
+    yylon, xxlat = np.meshgrid(ylon,xlat)
+    xxlat = xxlat.reshape(xxlat.shape[0]*xxlat.shape[1],1)
+    yylon = yylon.reshape(xxlat.shape[0]*xxlat.shape[1],1)
+    zzdepth = pres_lev*np.ones((xxlat.shape[0]*xxlat.shape[1],1))
+
+    # interpolation on the 2D grid at the pressure = pres_lev
+    mask_lev = (pres_lev-15 < pres)*(pres < pres_lev + 15)
+
+    lev_pres = pres[mask_lev]
+    lev_lat = lat[mask_lev]
+    lev_lon = lon[mask_lev]
+    lev_gt = gt_targ[mask_lev]
+    lev_est = gt_targ[mask_lev]
+    lev_error = error[mask_lev]
+
+    N = lev_lon.shape[0]
+    features = np.concatenate((lev_lat.reshape(N,1),lev_lon.reshape(N,1),lev_pres.reshape(N,1)),axis = 1)
+    points = np.concatenate((xxlat,yylon,zzdepth),axis = 1)
+
+    gt_interpol = griddata(features,lev_gt,points, rescale=True)
+    gt_interpol = gt_interpol.reshape(Nlat,Nlon)
+
+    est_interpol = griddata(features,lev_est,points, rescale=True)
+    est_interpol = est_interpol.reshape(Nlat,Nlon)
+
+    err_interpol = griddata(features,lev_error,points, rescale=True)
+    err_interpol = err_interpol.reshape(Nlat,Nlon)
+
+    err_mean = np.abs(lev_error).mean()
+
+    # select interpolated region where the data exists
+    mask_pres = pres < 30
+    pres_under_30 = pres[mask_pres]
+    lon_30 = lon[mask_pres]
+    lat_30 = lat[mask_pres]
+    # existing data region mask (care  only about the surface)
+    mask_region = np.ones((Nlat,Nlon)) < 2
+    for k in range(len(lon_30)):
+        i = np.argmin(abs(xlat - lat_30[k]))
+        j = np.argmin(abs(ylon - lon_30[k]))
+        mask_region[i-neigboors:i+neigboors,j-neigboors:j+neigboors] = False
+    # apply the mask
+    gt_interpol[mask_region] = nan
+    est_interpol[mask_region] = nan
+    err_interpol[mask_region] = nan
+
+    if cmap_temp:
+
+        cmap = 'coolwarm'
+    else:
+        cmap = 'jet'
+
+    plon, plat = map(ylon, xlat)
+    xxlon,xxlat = meshgrid(plon,plat)
+
+    parallels = np.arange(0.,81,5.) # lat
+    meridians = np.arange(10.,351.,5.) # lon
+
+    fig  = plt.figure(figsize = (15,10))
+    subplots_adjust(wspace = 0.1, hspace = 0.2)
+
+    ax1 = fig.add_subplot(221)
+    map.contourf(xxlon, xxlat, gt_interpol, cmap = cmap)
+    plt.title("GT-PRES-%.f"%pres_lev)
+    map.drawcoastlines()
+    map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+    map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+    divider = make_axes_locatable(ax1)
+    cax1 = divider.append_axes("right", size="5%", pad=0.05)
+    plt.colorbar(cax=cax1)
+
+    ax2 = fig.add_subplot(222)
+    map.contourf(xxlon, xxlat, est_interpol, cmap = cmap)
+    plt.title("EST-PRES-%.f"%pres_lev)
+    map.drawcoastlines()
+    map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+    map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+    divider = make_axes_locatable(ax2)
+    cax2 = divider.append_axes("right", size="5%", pad=0.05)
+    plt.colorbar(cax=cax2)
+
+    ax3 = subplot2grid((2,8), (1, 2), colspan=4)
+    map.contourf(xxlon, xxlat, err_interpol, cmap = cmap)
+    plt.title("%.f-Global-Error-%.2f °C"%(pres_lev,err_mean))
+    map.drawcoastlines()
+    map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+    map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+    divider = make_axes_locatable(ax3)
+    cax3 = divider.append_axes("right", size="5%", pad=0.05)
+    plt.colorbar(cax=cax3)
+
+###################################
+## Plot spatial mode distribution #
+###################################
+def spa_dyna_mode_dis(pi_hat, lon, lat, Nlat, Nlon, pres, h_depth,l_depth, inter_depth,neigboors, map):
+    """
+    Plot the spatial dynamical mode distribution between two depth levels in the ocean.
+
+    Args:
+    -----
+    - pi_hat: the prior probabilities for dynamical modes
+    - lon: ...
+    - lat: ...
+    - pres: infos of the pressure at each point in the ocean
+    - h_depth: the higher depth level from the inter_depth
+    - l_depth: the lower depth from the the inter_depth
+    - inter_depth: a depth level at which we interpolate the prior dynamical modes
+    - map: a basemap object
+    """
+
+    ## create a 2D coordinate grid
+    xlat = np.linspace(min(lat),max(lat),Nlat)
+    ylon = np.linspace(min(lon),max(lon),Nlon)
+
+    yylon, xxlat = np.meshgrid(ylon,xlat)
+    xxlat = xxlat.reshape(xxlat.shape[0]*xxlat.shape[1],1)
+    yylon = yylon.reshape(xxlat.shape[0]*xxlat.shape[1],1)
+    zzdepth = inter_depth*np.ones((xxlat.shape[0]*xxlat.shape[1],1))
+
+    ## Extract data
+    data_mask = np.where((pres >= h_depth)*(pres <= l_depth))
+    extracted_priors = pi_hat[data_mask[0],:][:10000,:]
+    lev_lon = lon[data_mask[0]][:10000]
+    lev_lat = lat[data_mask[0]][:10000]
+    lev_pres = pres[data_mask[0]][:10000]
+
+    N = lev_lon.shape[0]
+    features = np.concatenate((lev_lat.reshape(N,1),lev_lon.reshape(N,1),lev_pres.reshape(N,1)),axis = 1)
+    points = np.concatenate((xxlat,yylon,zzdepth),axis = 1)
+
+    ## existing data region
+    mask_pres = pres < 30
+    pres_under_30 = pres[mask_pres]
+    lon_30 = lon[mask_pres]
+    lat_30 = lat[mask_pres]
+    M = extracted_priors.shape[1]
+
+    # interpolation
+    dyn_interpols = np.zeros((Nlat*Nlon,M))
+    for dyn in tqdm(range(M), disable=False):
+        dyn_interpols[:,dyn] = griddata(features,extracted_priors[:,dyn],points, rescale=True)
+        dyn_interpols[np.isnan(dyn_interpols[:,dyn]),dyn] = 0
+    dyn_interpols = dyn_interpols/(dyn_interpols.sum(axis =1).reshape(Nlat*Nlon,1))
+
+
+    fig = plt.figure(figsize = (20,15))
+    subplots_adjust(wspace=0.2, hspace=0.2)
+
+    for dyn in tqdm(range(M), disable=False):
+        dyn_interpol = dyn_interpols[:,dyn].reshape(Nlat,Nlon)
+
+        # existing data region mask (care  only about the surface)
+        mask_region = np.ones((Nlat,Nlon)) < 2
+        for k in range(len(lon_30)):
+            i = np.argmin(abs(xlat - lat_30[k]))
+            j = np.argmin(abs(ylon - lon_30[k]))
+            mask_region[i-neigboors:i+neigboors,j-neigboors:j+neigboors] = False
+        # apply the mask
+        dyn_interpol[mask_region] = nan
+
+        cmap = 'YlOrBr'
+
+        plon, plat = map(ylon, xlat)
+        xxlon_,xxlat_ = meshgrid(plon,plat)
+
+        parallels = np.arange(0.,81,5.) # lat
+        meridians = np.arange(10.,351.,5.) # lon
+
+        if dyn == 6:
+            ax = subplot2grid((3,12), (2, 1), colspan=4)
+            map.contourf(xxlon_, xxlat_, dyn_interpol, cmap = cmap)
+            plt.title("Dyn-Mode-"+str(dyn+1))
+            map.drawcoastlines()
+            map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+            map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(cax=cax)
+
+        elif dyn == 7:
+            ax = subplot2grid((3,12), (2, 6), colspan=4)
+            map.contourf(xxlon_, xxlat_, dyn_interpol, cmap = cmap)
+            plt.title("Dyn-Mode-"+str(dyn+1))
+            map.drawcoastlines()
+            map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+            map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(cax=cax)
+
+        else:
+            plt.subplot(3,3,dyn+1)
+            ax = plt.gca()
+            map.contourf(xxlon_, xxlat_, dyn_interpol, cmap = cmap)
+            plt.title("Dyn-Mode-"+str(dyn+1))
+            map.drawcoastlines()
+            map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+            map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(cax=cax)
+###############################
+## Plot the seasonal variation#
+###############################
+
+def sea_temp(indexs, gt_temps, est_temps, gt_dates):
+    """
+    Calulate the  seasonal temperature variation in a small specific zone
+
+    Args:
+    - indexs: indexs of related points
+    - gt_temps: the ground-truth temperature
+    - est_temps: the estimated temperature
+
+    """
+    gt = gt_temps[indexs]
+    est = est_temps[indexs]
+    residus = np.abs(gt-est)
+    dates = gt_dates[indexs]
+
+    sorted_date_indexes = np.argsort(dates)
+    sorted_dates = dates[sorted_date_indexes]
+    sorted_gt = gt[sorted_date_indexes]
+    sorted_est = est[sorted_date_indexes]
+    sorted_residus = residus[sorted_date_indexes]
+
+    jdays = [julian.from_jd(x, fmt='mjd') for x in sorted_dates]
+    days = np.array([x.day + (x.month -1)*30 for x in jdays])
+
+    _, trend_gt = sm.tsa.filters.hpfilter(sorted_gt, 1000)
+    _, trend_est = sm.tsa.filters.hpfilter(sorted_est, 1000)
+    _, trend_residus = sm.tsa.filters.hpfilter(sorted_residus, 500)
+
+    temps_in_year_gt = np.zeros(365)
+    temps_in_year_est = np.zeros(365)
+    temps_in_year_residus = np.zeros(365)
+
+    for d in range(0,365):
+
+        temps_in_year_gt[d] = np.mean(trend_gt[np.where(days == d +1)])
+        temps_in_year_est[d] = np.mean(trend_est[np.where(days == d +1)])
+        temps_in_year_residus[d] = np.std(trend_residus[np.where(days == d +1)])
+
+        if np.isnan(temps_in_year_gt[d]):
+            temps_in_year_gt[d] = temps_in_year_gt[d-1]
+        if np.isnan(temps_in_year_est[d]):
+            temps_in_year_est[d] = temps_in_year_est[d-1]
+        if np.isnan(temps_in_year_residus[d]):
+            temps_in_year_residus[d] = temps_in_year_residus[d-1]
+
+    return temps_in_year_gt, temps_in_year_est, temps_in_year_residus
+
+
+def sea_temp_plot(p_index,coords,X, gt_temp, est_temp, t1, t2, t3, lat_thres = 3,lon_thres = 3, date_thres = 1000, depth_thres = 10, combine = True ,subplot = 221):
+    """
+    Seasonal temperature visualization at severals small local regions in ocean
+    Example: sea_temp_plot(p_index,coords_g_train,X, gt_temp_train, est_temp_train,t1 = 1000,t2 = 1000, t3 =50,
+    lat_thres = 3,lon_thres = 3, date_thres = 4745, depth_thres = 10, combine = True ,subplot = 221)
+    Args:
+    -----
+    - p_index: index of the point in data
+    - coords: containing lat,lon, juld infos
+    """
+
+    # extract local points
+    lat = coords[:,0]
+    lon = coords[:,1]
+    juld = coords[:,2]
+    indexs = index_extract(p_index,lat,lon,juld,X,lat_thres = lat_thres, lon_thres = lon_thres, date_thres = date_thres, depth_thres = depth_thres, patch = True)
+
+    gt_trend, est_trend, residu_trend = sea_temp(indexs, gt_temp, est_temp, juld)
+
+    # apply hp filters
+    _, trend_gt = sm.tsa.filters.hpfilter(gt_trend, t1)
+    _, trend_est = sm.tsa.filters.hpfilter(est_trend, t2)
+    _, trend_residu = sm.tsa.filters.hpfilter(residu_trend, t3)
+
+    low_err = trend_est - trend_residu
+    high_err = trend_est + trend_residu
+
+    x_labels = ['Jan','Feb','Mar','Apr','May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    spots = np.asarray([30*i for i in range(12)])
+
+    if combine:
+        plt.subplot(subplot)
+
+    plt.plot(trend_gt, label = 'GT Trend')
+    plt.plot(trend_est, label = 'Est Trend')
+    plt.fill_between(np.linspace(0,364,365),low_err,high_err,color='green', alpha=0.2, label = 'Std-Error')
+    plt.title('LAT= %.2f LON= %.2f PRES= %.2f'%(coords[p_index,0],coords[p_index,1],X[p_index,-1]))
+    plt.xlabel('Months')
+    plt.ylabel('Temperature')
+    plt.xticks(spots,x_labels)
+    plt.legend()
+
+def index_extract(p_index,lat,lon,juld,X,lat_thres = lat_thres, lon_thres = lon_thres, date_thres = date_thres, depth_thres = depth_thres, patch = True):
+    """
+    Extract indexes in specific conditions
+    """
+
+    depth_point = X[:,-1][p_index]
+    lat_point  = lon[p_index]
+    lon_point = lat[p_index]
+    date_point = juld[p_index]
+
+    depth_mask = np.abs(X[:,-1] - depth_point) < depth_thres
+    lat_mask =  np.abs(lat - lat_point) <lat_thres
+    lon_mask = np.abs(lon - lon_point) < lon_thres
+    date_mask = np.abs(juld - date_point) < date_thres
+
+    index = np.where(depth_mask*lat_mask*lon_mask*date_mask)
+
+    return index

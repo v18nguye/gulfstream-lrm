@@ -270,3 +270,76 @@ def model_GPU(inputs_train, nb_class, nb_iter_, iter_EM, nb_features, n_targets,
     np.savetxt('Beta_E'+str(nb)+'.txt', Beta.reshape(len_class*np.sum(np.asarray(nb_class))*nb_features*n_targets))
     np.savetxt('Sigma_E'+str(nb)+'.txt', Sigma.reshape(len_class*np.sum(np.asarray(nb_class))*n_targets*n_targets))
     np.savetxt('Lamda_E'+str(nb)+'.txt', Lamda.reshape(len_class*np.sum(np.asarray(nb_class))*1))
+
+
+def model_GPU_tempsal(inputs_train, nb_class, nb_iter_, iter_EM, nb_features, n_targets,nb, save = True, al_targ= False):
+  """ a model for predicting at the same time the salinity and temperature
+  - inputs: list of inputs to model
+  - nb_class: list of classes
+  - nb_iter_: ...
+  - iter_EM: ...
+  - nb_features: ...
+  - n_targets: ...
+  - nb: nb th experience
+  - save: boolean
+  - al_targ: boolean
+  """
+
+  len_class = len(nb_class)
+  BIC_= []
+  Log_lik = np.zeros((len_class,nb_iter_,iter_EM))
+  Beta = np.zeros((len_class, np.sum(np.asarray(nb_class)), nb_features, n_targets))
+  Sigma = np.zeros((len_class,np.sum(np.asarray(nb_class)), n_targets, n_targets))
+  Lamda = np.zeros((len_class,np.sum(np.asarray(nb_class)),1))
+
+  start = time.time()
+  print ('Starting ...')
+  th = 0
+  indx = 0
+  for i in range(len(inputs_train)):
+
+    bic, log, para, Beta_hat, Sigma_hat, lambda_hat  = BIC_GPU(inputs_train[i])
+    BIC_.append(bic)
+    Log_lik[int(i/nb_iter_),i%nb_iter_,:] = np.asarray(log).reshape(iter_EM,)
+
+    if (i + 1) % nb_iter_ == 0:
+      Beta[th,indx:indx + nb_class[th],:,:] = Beta_hat
+      if al_targ == True:
+        Sigma[th,indx:indx + nb_class[th],:,:] = Sigma_hat
+      else:
+        Sigma[th,indx:indx + nb_class[th],:,:] = Sigma_hat.reshape(Sigma_hat.shape[0],1)
+      Lamda[th,indx:indx + nb_class[th],:] = lambda_hat.reshape(lambda_hat.shape[0],1)
+      indx = indx +  nb_class[th]
+      th = th + 1
+
+    if int(i/len(inputs_train)*100) % 5 == 0:
+      print('Completing ...: ',int(i/len(inputs_train)*100),'%')
+
+  print('Executive time: ',time.time() - start)
+  # convert result to array and reshape it
+  bic_arr = np.asarray(BIC_)
+  bic_reshape = bic_arr.reshape(nb_iter_,len(nb_class),order='F')
+  # save to .pkl
+
+
+  if save:
+    BIC_E = open('BIC_E'+str(nb)+'.pkl', 'wb')
+    pickle.dump(bic_reshape, BIC_E)
+
+    Log_E = open('Log_E'+str(nb)+'.pkl', 'wb')
+    pickle.dump(Log_lik.reshape(len_class*nb_iter_,iter_EM), Log_E)
+
+    Beta_E = open('Beta_E'+str(nb)+'.pkl', 'wb')
+    pickle.dump(Beta, Beta_E)
+
+    Sigma_E = open('Beta_E'+str(nb)+'.pkl', 'wb')
+    pickle.dump(Sigma, Sigma_E)
+
+    Lamda_E =  open('Lamda_E'+str(nb)+'.pkl', 'wb')
+    pickle.dump(Lamda, Lamda_E)
+
+    BIC_E.close()
+    Log_E.close()
+    Beta_E.close()
+    Sigma_E.close()
+    Lm

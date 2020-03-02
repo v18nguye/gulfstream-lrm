@@ -15,6 +15,7 @@ import matplotlib.colors as mcolors
 import scipy.stats
 from scipy.linalg import qr, solve, lstsq
 from scipy.stats import multivariate_normal
+from scipy.interpolate import griddata
 import random as rd
 import julian
 import time
