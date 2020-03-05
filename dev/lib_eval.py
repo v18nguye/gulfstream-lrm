@@ -543,7 +543,7 @@ def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pre
 
     ax3 = subplot2grid((2,8), (1, 2), colspan=4)
     map.contourf(xxlon, xxlat, err_interpol, cmap = cmap)
-    plt.title("%.f-Global-Error-%.2f °C"%(pres_lev,err_mean))
+    plt.title("%.f-Global-Error-%.2f"%(pres_lev,err_mean))
     map.drawcoastlines()
     map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
     map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
@@ -576,6 +576,7 @@ def temp_dyna_mode_var(pi_hat, lon, lat, juld,  pres, sel_lat, sel_lon, sel_pres
     lon_mask = np.abs(lon - sel_lon) < lon_thres
     pres_mask = np.abs(pres - sel_pres) < pres_thres
     mask = lat_mask*lon_mask*pres_mask
+    print("Number of data points N= "+str(len(np.where(mask)[0])))
 
     # extracted julian days and mode's priori
     ex_jul = juld[mask]
@@ -642,7 +643,7 @@ def temp_dyna_mode_var(pi_hat, lon, lat, juld,  pres, sel_lat, sel_lon, sel_pres
 #############################################
 ## Plot spatial dynamical mode distribution #
 #############################################
-def spa_dyna_mode_dis(pi_hat, lon, lat, Nlat, Nlon, pres, h_depth,l_depth, inter_depth,neigboors, map):
+def spa_dyna_mode_dis(pi_hat, lon, lat, Nlat, Nlon, pres, h_depth,l_depth, inter_depth,neigboors, map, temp = True):
     """
     Plot the spatial dynamical mode distribution between two depth levels in the ocean.
 
@@ -708,8 +709,10 @@ def spa_dyna_mode_dis(pi_hat, lon, lat, Nlat, Nlon, pres, h_depth,l_depth, inter
         # apply the mask
         dyn_interpol[mask_region] = nan
 
-        cmap = 'YlOrBr'
-
+        if temp:
+            cmap = 'YlOrBr'
+        else:
+            cmap = 'BuPu'
         plon, plat = map(ylon, xlat)
         xxlon_,xxlat_ = meshgrid(plon,plat)
 
@@ -749,6 +752,108 @@ def spa_dyna_mode_dis(pi_hat, lon, lat, Nlat, Nlon, pres, h_depth,l_depth, inter
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)
             plt.colorbar(cax=cax)
+
+###############################
+## Turbulence observations
+###############################
+def turbulence(pi_hat, beta, f_data, std_data, lon, lat, juld, X,title = 'TEMP', lat_fix = 40, lon_fix = -45, t = 20000):
+
+    """
+    Represent the variation of temperature in the function of (sla,z) when a turbulence passes
+
+    args:
+    - lamda: dynamical mode's priori probabilities
+    - beta: ..
+    - f_data: feature means in the data
+    - std_data: feature std in the data
+    """
+
+    ## pre-processed data
+    alpha0_x = 1
+    alpha1_x = 20000
+    w = 1/365.25
+    sin_day = np.sin(2*math.pi*w*t)
+    cos_day = np.cos(2*math.pi*w*t)
+    lat_rad = lat_fix*(math.pi/180)
+    lat_sin = np.sin(lat_rad)
+    lon_rad = lon_fix*(math.pi/180)
+    lon_sin = np.sin(lon_rad)
+    lon_cos = np.cos(lon_rad)
+    pre_data = np.array([alpha0_x,alpha1_x,sin_day,cos_day,lat_sin,lon_sin,lon_cos])
+
+    ## interpolate pi_hat
+    mask_lon = np.abs(lon - lon_fix) < 2
+    mask_lat = np.abs(lat - lat_fix) < 2
+#     mask_juld = np.abs(juld - alpha1_x) < 2
+#     mask = np.where(mask_lon*mask_lat*mask_juld)[0]
+    mask = np.where(mask_lon*mask_lat)[0]
+    N = mask.shape[0]
+    print("Number of data: ", N)
+    features = np.concatenate((lon[mask].reshape(N,1),lat[mask].reshape(N,1),X[mask,8].reshape(N,1)), axis =1)
+#     features = np.concatenate((juld[mask].reshape(N,1),X[mask,8].reshape(N,1)), axis =1)
+    pi_hat_targ = pi_hat[mask,:]
+    lat_vec = lat_fix*np.ones((100,1))
+    lon_vec = lon_fix*np.ones((100,1))
+    juld_vec = alpha1_x*np.ones((100,1))
+    depths = np.linspace(10,900,100).reshape(100,1)
+    points = np.concatenate((lon_vec,lat_vec,depths), axis = 1)
+#     points = np.concatenate((juld_vec, depths), axis = 1)
+    pi_hat_interp = griddata(features,pi_hat_targ,points, rescale=True)
+
+    ## generate sea level anomaly variations
+    sla_e = list(linspace(-4,4,100))
+    sla_anti =  np.array([1/sqrt(2*pi*1**2)*exp(-1/(2*1**2)*k**2) for k in sla_e])
+    sla = -sla_anti
+
+    ## generate depth levels
+    g_sla_anti, g_depths = np.meshgrid(sla_anti,depths)
+    g_sla, g_depths = np.meshgrid(sla,depths)
+    g_sla_anti = g_sla_anti.reshape(100*100)
+    g_sla = g_sla.reshape(100*100)
+    g_depths = g_depths.reshape(100*100)
+    temps_anti_cyclone = []
+    temps_cyclone = []
+
+    ## predict temperature
+    for k in range(100*100):
+        yx = 0
+        yx_anti = 0
+        pi_hat_depth = pi_hat_interp[np.where(depths == g_depths[k])[0],:].reshape(8)
+        x_anti = np.append(pre_data,[g_sla_anti[k],g_depths[k]])
+        x = np.append(pre_data,[g_sla[k],g_depths[k]])
+        x = (x- f_data)/std_data
+        x_anti = (x_anti- f_data)/std_data
+        x = x.reshape(1,9)
+        x_anti = x_anti.reshape(1,9)
+        for λ in range(pi_hat.shape[1]):
+            yx = yx + pi_hat_depth[λ]*x@beta[λ,:,:].ravel()
+            yx_anti = yx_anti + pi_hat_depth[λ]*x_anti@beta[λ,:,:].ravel()
+        temps_cyclone.append(yx)
+        temps_anti_cyclone.append(yx_anti)
+
+    temps_cyclone = np.array(temps_cyclone).reshape(100,100)
+    temps_anti_cyclone = np.array(temps_anti_cyclone).reshape(100,100)
+    g_sla = g_sla.reshape(100,100)
+    g_sla_anti = g_sla_anti.reshape(100,100)
+    g_sla_e,g_depths =  np.meshgrid(sla_e,depths)
+
+#     fig = plt.figure(figsize = (20,15))
+#     subplots_adjust(wspace=0.2, hspace=0.2)
+    ## Anti-cyclone plots
+    ax = subplot2grid((6,7), (0, 0), colspan=3, rowspan =2)
+    plt.plot(sla_e,sla_anti)
+    plt.title("SLA for Anti-cyclone")
+    ax = subplot2grid((6,7), (3, 0), colspan=3, rowspan =3)
+    plt.contourf(g_sla_e,-g_depths,temps_anti_cyclone)
+    plt.title(title)
+    ## cyclone plots
+    ax = subplot2grid((6,7), (0, 4), colspan=3, rowspan =2)
+    plt.plot(sla_e,sla)
+    plt.title("SLA for Cyclone")
+    ax = subplot2grid((6,7), (3, 4), colspan=3, rowspan =3)
+    plt.contourf(g_sla_e,-g_depths,temps_cyclone)
+    plt.title(title)
+
 
 ###############################
 ## Plot the seasonal variation#
@@ -802,7 +907,7 @@ def sea_temp(indexs, gt_temps, est_temps, gt_dates):
     return temps_in_year_gt, temps_in_year_est, temps_in_year_residus
 
 
-def sea_temp_plot(p_index,coords,X, gt_temp, est_temp, t1, t2, t3, lat_thres = 3,lon_thres = 3, date_thres = 1000, depth_thres = 10, combine = True ,subplot = 221):
+def sea_temp_plot(p_index,coords,X, gt_temp, est_temp, t1, t2, t3, lat_thres = 3,lon_thres = 3, date_thres = 1000, depth_thres = 10, combine = True ,subplot = 221, temp = True):
     """
     Seasonal temperature visualization at severals small local regions in ocean
     Example: sea_temp_plot(p_index,coords_g_train,X, gt_temp_train, est_temp_train,t1 = 1000,t2 = 1000, t3 =50,
@@ -840,7 +945,10 @@ def sea_temp_plot(p_index,coords,X, gt_temp, est_temp, t1, t2, t3, lat_thres = 3
     plt.fill_between(np.linspace(0,364,365),low_err,high_err,color='green', alpha=0.2, label = 'Std-Error')
     plt.title('LAT= %.2f LON= %.2f PRES= %.2f'%(coords[p_index,0],coords[p_index,1],X[p_index,-1]))
     plt.xlabel('Months')
-    plt.ylabel('Temperature')
+    if temp:
+        plt.ylabel('Temperature')
+    else:
+        plt.ylabel('Salinity')
     plt.xticks(spots,x_labels)
     plt.legend()
 
