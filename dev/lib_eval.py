@@ -341,72 +341,78 @@ def shiftedColorMap(cmap, start=0, midpoint=0.5, stop=1.0, name='shiftedcmap'):
 
     return newcmap
 #########################################
-## Plot spatial temperature distribution#
+##  Plot target prediction              #
 #########################################
-def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pres_lev, neigboors, cmap_temp = True, lon_ = False):
+def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_var, neigboors, cmap_temp = True, surf = 0):
     """
     Target prediction in time and space
 
     - lat: latitude of the data
     - lon: longitude of the data
     - neigboors: for selecting the interpolated region
-    - Nlon: number of point discritizing the longitude
-    - Nlat: number of point discritizing the latitude
-    - pres_lev: a determined pressure at which we present data ± 15
-    - vert : boolean
-        * False: surface target prediction
-        * True:
+    - Nx: number of point discritizing the x axis
+    - Ny: number of point discritizing the y axis
+    - prd_var: predicting variable on which we find targets
+        * a determined pressure at which we present data ± 15
+        * a latiude
+        * a longitude
+    - surf : int
+        * 0: surface target prediction
+        * 1: predict a target on a longitude
+        * 2: ... latitude
     """
 
     # create a 2D coordinate grid
-    xlat = np.linspace(min(lat),max(lat),Nlat)
-    ylon = np.linspace(min(lon),max(lon),Nlon)
+    if surf == 0:
+        x = np.linspace(min(lon),max(lon),Nx)
+        y = np.linspace(min(lat),max(lat),Ny)
+        #  interpolating data mask
+        prd_mask = (prd_var-15 < pres)*(pres < prd_var + 15)
+    elif surf == 1:
+        x = np.linspace(min(lat),max(lat),Nx)
+        y = np.linspace(min(pres),max(pres),Ny)
+        prd_mask = (prd_var-3 < lon)*(lon < prd_var + 3)
+    elif surf == 2:
+        x = np.linspace(min(lon),max(lon),Nx)
+        y = np.linspace(min(pres),max(pres),Ny)
+        prd_mask = (prd_var-3 < lat)*(lat < prd_var + 3)
+    else:
+        print("Surf is not a valid number")
 
-    yylon, xxlat = np.meshgrid(ylon,xlat)
-    xxlat = xxlat.reshape(xxlat.shape[0]*xxlat.shape[1],1)
-    yylon = yylon.reshape(xxlat.shape[0]*xxlat.shape[1],1)
-    zzdepth = pres_lev*np.ones((xxlat.shape[0]*xxlat.shape[1],1))
+    ## interpolating grid
+    xx, yy = np.meshgrid(x,y)
+    xx = xx.reshape(xx.shape[0]*xx.shape[1],1)
+    yy = yy.reshape(xx.shape[0]*xx.shape[1],1)
+    zz = prd_var*np.ones((xx.shape[0]*xx.shape[1],1))
 
-    # interpolation on the 2D grid at the pressure = pres_lev
-    mask_lev = (pres_lev-15 < pres)*(pres < pres_lev + 15)
+    ## interpolating data
+    ipres = pres[prd_mask]
+    ilat = lat[prd_mask]
+    ilon = lon[prd_mask]
+    igt = gt_targ[prd_mask]
+    iest = est_targ[prd_mask]
+    ierror = error[prd_mask]
 
-    lev_pres = pres[mask_lev]
-    lev_lat = lat[mask_lev]
-    lev_lon = lon[mask_lev]
-    lev_gt = gt_targ[mask_lev]
-    lev_est = est_targ[mask_lev]
-    lev_error = error[mask_lev]
+    ## data points
+    N = ilon.shape[0]
+    features = np.concatenate((ilat.reshape(N,1),ilon.reshape(N,1), ipres.reshape(N,1)),axis = 1)
+    if surf == 0:
+        points = np.concatenate((yy,xx,zz),axis = 1)
+    elif surf == 1:
+        points = np.concatenate((xx,zz,yy),axis = 1)
+    elif surf == 2:
+        points = np.concatenate((zz,xx,yy),axis = 1)
 
-    N = lev_lon.shape[0]
-    features = np.concatenate((lev_lat.reshape(N,1),lev_lon.reshape(N,1),lev_pres.reshape(N,1)),axis = 1)
-    points = np.concatenate((xxlat,yylon,zzdepth),axis = 1)
+    gt_interpol = griddata(features,igt,points, rescale=True)
+    gt_interpol = gt_interpol.reshape(Ny,Nx)
 
-    gt_interpol = griddata(features,lev_gt,points, rescale=True)
-    gt_interpol = gt_interpol.reshape(Nlat,Nlon)
+    est_interpol = griddata(features,iest,points, rescale=True)
+    est_interpol = est_interpol.reshape(Ny,Nx)
 
-    est_interpol = griddata(features,lev_est,points, rescale=True)
-    est_interpol = est_interpol.reshape(Nlat,Nlon)
-
-    err_interpol = griddata(features,lev_error,points, rescale=True)
-    err_interpol = err_interpol.reshape(Nlat,Nlon)
-
-    err_mean = np.abs(lev_error).mean()
-
-    # select interpolated region where the data exists
-    mask_pres = pres < 30
-    pres_under_30 = pres[mask_pres]
-    lon_30 = lon[mask_pres]
-    lat_30 = lat[mask_pres]
-    # existing data region mask (care  only about the surface)
-    mask_region = np.ones((Nlat,Nlon)) < 2
-    for k in range(len(lon_30)):
-        i = np.argmin(abs(xlat - lat_30[k]))
-        j = np.argmin(abs(ylon - lon_30[k]))
-        mask_region[i-neigboors:i+neigboors,j-neigboors:j+neigboors] = False
-    # apply the mask
-    gt_interpol[mask_region] = nan
-    est_interpol[mask_region] = nan
-    err_interpol[mask_region] = nan
+    err_interpol = griddata(features,ierror,points, rescale=True)
+    err_interpol = err_interpol.reshape(Ny,Nx)
+    # mean squared error
+    mse = np.abs(ierror).mean()**2
 
     vmin = np.min(err_interpol[~np.isnan(err_interpol)])
     vmax = np.max(err_interpol[~np.isnan(err_interpol)])
@@ -419,58 +425,115 @@ def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pre
         cmap = 'jet'
         cmap2 =shiftedColorMap(matplotlib.cm.bwr, midpoint =midpoint)
 
-    max_gt = np.max(gt_interpol[~np.isnan(gt_interpol)])
-    min_gt = np.min(gt_interpol[~np.isnan(gt_interpol)])
-    max_est = np.max(est_interpol[~np.isnan(est_interpol)])
-    min_est = np.min(est_interpol[~np.isnan(est_interpol)])
 
-    range_max = ceil(max(max_gt,max_est)) + 2
-    if min(min_gt,min_est) < 0:
-        range_min = int(min(min_gt,min_est) -1)
+    if surf == 0:
+        ## select interpolated region where the data exists
+        mask_pres = pres < 30
+        pres_under_30 = pres[prd_mask]
+        lon_30 = lon[prd_mask]
+        lat_30 = lat[prd_mask]
+        # existing data region mask (care  only about the surface)
+        mask_region = np.ones((Nx,Ny)) < 2
+        for k in range(len(lon_30)):
+            i = np.argmin(abs(y - lat_30[k]))
+            j = np.argmin(abs(x - lon_30[k]))
+            mask_region[i-neigboors:i+neigboors,j-neigboors:j+neigboors] = False
+        # apply the mask
+        gt_interpol[mask_region] = nan
+        est_interpol[mask_region] = nan
+        err_interpol[mask_region] = nan
+
+        plon, plat = map(x, y)
+        xxlon,xxlat = meshgrid(plon,plat)
+
+        parallels = np.arange(0.,81,5.) # lat
+        meridians = np.arange(10.,351.,5.) # lon
+
+        fig  = plt.figure(figsize = (15,10))
+        subplots_adjust(wspace = 0.2, hspace = 0.2)
+
+        ax2 = fig.add_subplot(222)
+        cs = map.contourf(xxlon, xxlat, est_interpol, cmap = cmap)
+        plt.title("EST-PRES-%.f"%prd_var)
+        map.drawcoastlines()
+        map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+        map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+        divider = make_axes_locatable(ax2)
+        cax2 = divider.append_axes("right", size="5%", pad=0.05)
+        plt.colorbar(cax=cax2)
+
+        ax1 = fig.add_subplot(221)
+        map.contourf(xxlon, xxlat, gt_interpol, cmap = cmap,levels = cs.levels)
+        plt.title("GT-PRES-%.f"%prd_var)
+        map.drawcoastlines()
+        map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+        map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+        divider = make_axes_locatable(ax1)
+        cax1 = divider.append_axes("right", size="5%", pad=0.05)
+        plt.colorbar(cax=cax1)
+
+        ax3 = subplot2grid((2,8), (1, 2), colspan=4)
+        map.contourf(xxlon, xxlat, err_interpol, cmap = cmap2, levels = 20)
+        plt.title("%.f-Global-MSE-%.2f"%(prd_var,mse))
+        map.drawcoastlines()
+        map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+        map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+        divider = make_axes_locatable(ax3)
+        cax3 = divider.append_axes("right", size="5%", pad=0.05)
+        plt.colorbar(cax=cax3)
+
     else:
-        range_min = int(min(min_gt,min_est))
+        if surf == 1:
+            label_, label, labelx  ='W','LON', 'LAT'
 
-    plon, plat = map(ylon, xlat)
-    xxlon,xxlat = meshgrid(plon,plat)
+        elif surf == 2:
+            label_, label, labelx = 'N','LAT', 'LON'
 
-    parallels = np.arange(0.,81,5.) # lat
-    meridians = np.arange(10.,351.,5.) # lon
+        xx = xx.reshape(Nx,Ny)
+        yy = yy.reshape(Nx,Ny)
 
-    fig  = plt.figure(figsize = (15,10))
-    subplots_adjust(wspace = 0.2, hspace = 0.2)
+        fig  = plt.figure(figsize = (15,10))
 
-    ax2 = fig.add_subplot(222)
-    #cs = map.contourf(xxlon, xxlat, est_interpol, cmap = cmap, vmin= range_min, vmax = range_max)
-    cs = map.contourf(xxlon, xxlat, est_interpol, cmap = cmap)
-    plt.title("EST-PRES-%.f"%pres_lev)
-    map.drawcoastlines()
-    map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
-    map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
-    divider = make_axes_locatable(ax2)
-    cax2 = divider.append_axes("right", size="5%", pad=0.05)
-    plt.colorbar(cax=cax2)
+        subplots_adjust(wspace = 0.2, hspace = 0.2)
 
-    ax1 = fig.add_subplot(221)
-    #map.contourf(xxlon, xxlat, gt_interpol, cmap = cmap, vmin= range_min, vmax = range_max,levels = cs.levels)
-    map.contourf(xxlon, xxlat, gt_interpol, cmap = cmap,levels = cs.levels)
-    plt.title("GT-PRES-%.f"%pres_lev)
-    map.drawcoastlines()
-    map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
-    map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
-    divider = make_axes_locatable(ax1)
-    cax1 = divider.append_axes("right", size="5%", pad=0.05)
-    plt.colorbar(cax=cax1)
+        ax2 = fig.add_subplot(222)
+        cs = plt.contourf(xx,yy,est_interpol, cmap = cmap)
+        plt.grid()
+        ax2.set_ylim(ax2.get_ylim()[::-1])
+        if surf == 1:
+            ax2.set_xlim(ax2.get_xlim()[::-1])
+        plt.title("EST:%s %.f°%s"%(label,prd_var,label_))
+        plt.xlabel("%s"%labelx)
+        plt.ylabel("PRES")
+        divider = make_axes_locatable(ax2)
+        cax2 = divider.append_axes("right", size="5%", pad=0.05)
+        plt.colorbar(cax=cax2)
 
-    ax3 = subplot2grid((2,8), (1, 2), colspan=4)
-    map.contourf(xxlon, xxlat, err_interpol, cmap = cmap2, levels = 20)
-    plt.title("%.f-Global-Error-%.2f"%(pres_lev,err_mean))
-    map.drawcoastlines()
-    map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
-    map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
-    divider = make_axes_locatable(ax3)
-    cax3 = divider.append_axes("right", size="5%", pad=0.05)
-    plt.colorbar(cax=cax3)
+        ax1 = fig.add_subplot(221)
+        plt.contourf(xx, yy, gt_interpol, cmap = cmap,levels = cs.levels)
+        plt.grid()
+        ax1.set_ylim(ax1.get_ylim()[::-1])
+        if surf == 1:
+            ax1.set_xlim(ax1.get_xlim()[::-1])
+        plt.title("GT:%s %.f°%s"%(label,prd_var,label_))
+        plt.xlabel("%s"%labelx)
+        plt.ylabel("PRES")
+        divider = make_axes_locatable(ax1)
+        cax1 = divider.append_axes("right", size="5%", pad=0.05)
+        plt.colorbar(cax=cax1)
 
+        ax3 = subplot2grid((2,8), (1, 2), colspan=4)
+        divider = make_axes_locatable(ax3)
+        plt.contourf(xx, yy, err_interpol, cmap = cmap2, levels = 20)
+        plt.grid()
+        ax3.set_ylim(ax3.get_ylim()[::-1])
+        if surf == 1:
+            ax3.set_xlim(ax3.get_xlim()[::-1])
+        plt.title("MSE:%.3f - %s %.f°%s"%(mse,label,prd_var,label_))
+        plt.xlabel("%s"%labelx)
+        plt.ylabel("PRES")
+        cax3 = divider.append_axes("right", size="5%", pad=0.05)
+        plt.colorbar(cax=cax3)
 ############################################
 # Plot temporal dynamical mode distribution#
 ############################################
