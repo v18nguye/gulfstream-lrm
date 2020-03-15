@@ -12,6 +12,7 @@ import os
 import statsmodels.api as sm
 import torch
 import julian
+import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import copy
@@ -254,57 +255,6 @@ def pi_hat(X_,y_,Beta,Sigma,Lambda,n,nb,th_class, test):
       np.savetxt('pi_h_train_E'+str(nb)+'_'+str(th_class)+'.txt',pi_hat_np)
 
 
-def prior_prob_time_plot(pi_hat,juld_test, K, m, title,figx =10, figy = 10):
-    """
-    - K: number of classes
-    - m: size of the windows
-    """
-    encoded_juld = [julian.from_jd(round(x), fmt='mjd') for x in juld_test]
-    days_in_year =  np.asarray([x.day + (x.month -1)*30 for x in encoded_juld])
-
-    # prior probality per days
-    prior_prob_days = np.zeros((K,365))
-
-    days = np.linspace(1,365,365).astype(int)
-
-    for day in days:
-        day_mask = np.where(days_in_year == day)
-        if size(day_mask) != 0:
-            prior_prob_days[:,day-1] = mean(pi_hat[day_mask], axis = 0)
-
-    mask = 1/m*np.ones(m)
-
-    segment = int(365/len(mask))
-
-    prior_prob_days_mean = np.zeros((K,segment))
-
-    for k in range(segment):
-        if (k == 0) or (k == segment-1):
-            w = prior_prob_days[:,k*len(mask):(k+1)*len(mask)]
-            prior_prob_days_mean[:, k] = w@mask
-        else:
-            w = prior_prob_days[:,k*len(mask) - int(len(mask)/2):k*len(mask)+len(mask) -int(len(mask)/2)]
-            prior_prob_days_mean[:, k] = w@mask
-
-    days_mean = np.asarray([i for i in range(segment)])*m
-    x_labels = ['Jan','Feb','Mar','Apr','May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    spots = np.asarray([30*i for i in range(12)])
-
-
-    figure(num=None, figsize=(figx, figy), dpi=80, facecolor='w', edgecolor='k')
-    colors = ['r', 'g', 'b', 'c', 'm', 'y']
-
-    for k in range(K):
-        plt.scatter(days_mean[:-2],prior_prob_days_mean[k,:-2], color = colors[k])
-        plt.plot(days_mean[:-2],prior_prob_days_mean[k,:-2], label = 'Mode-'+str(k+1), color=colors[k])
-        plt.legend()
-        plt.xticks(spots,x_labels);
-        plt.ylabel('Priori Probability')
-        plt.xlabel('Day')
-        plt.title(title)
-        plt.grid(True)
-
-
 def temp_plot(lon_test,lat_test,map,temp):
     "Plot surface temperature"
 
@@ -324,108 +274,6 @@ def temp_plot(lon_test,lat_test,map,temp):
     cax = divider.append_axes("right", size="5%", pad=0.05)
     plt.colorbar(cax=cax)
 
-def follow_x(index_,coords_g,priode_,X,f_x,std_x,pi_hat,beta,lambda_,sigma,gt_temp):
-    "Following the temperature evolution of a point x"
-
-    index = index_
-    latx, lonx, juldx0 = coords_g[index,0],coords_g[index,1],coords_g[index,2]
-    print("Coordinates x: ","(longtitude= "+str(lonx)+",latitude= "+str(latx)+")")
-    x0 = copy.deepcopy(X[index,:])
-    priode = priode_
-    tempx = []
-    tempx.append(gt_temp[index_])
-    daysx = []
-    daysx.append(juldx0)
-    pi_hatx0 = copy.deepcopy(pi_hat[index,:])
-    pi_hatx = pi_hatx0
-    K = pi_hatx.shape[0]
-
-    for j in range(1,priode):
-
-        juldx = juldx0 + j
-
-        # update date of x
-        x0[1] = juldx
-        x0[2] = np.sin(2*math.pi*(1/365.25)*juldx)
-        x0[3] = np.cos(2*math.pi*(1/365.25)*juldx)
-
-        # normalize x
-        x = (x0 - f_x)/std_x
-
-        # update prior mode probabilities of x
-        p = 0
-        for k in range(K):
-            p += lambda_[k]*mn.pdf(tempx[j-1],x@beta[k,:,:],sigma[k,:,:])
-
-        for k in range(K):
-            pi_hatx[k]= lambda_[k]*mn.pdf(tempx[j-1],x@beta[k,:,:],sigma[k,:,:])/p
-
-        yx = 0
-        # estimate temperature
-        for λ in range(pi_hatx.shape[0]):
-            yx = yx + pi_hatx[λ]*x@beta[λ,:,:].ravel()
-
-        daysx.append(juldx)
-        tempx.append(yx)
-
-    return daysx,tempx
-
-
-def follow_x_plot(daysx,tempx,prof,step = 1,  temp = True):
-    """
-    Plot evolution of sea surface temperature at a specific coordinate
-
-    + step: step plot for year info
-    """
-
-    years = np.asarray([julian.from_jd(d, fmt='mjd').year + cnes_julian for d in list(daysx)])
-    u_year, c_year = np.unique(years,return_counts = True)
-    u_year = list(u_year)
-    u_year[0] = str(julian.from_jd(daysx[0], fmt='mjd').year + cnes_julian)+"-"+str(julian.from_jd(daysx[0], fmt='mjd').month)+"-"+str(julian.from_jd(daysx[0], fmt='mjd').day)
-    spots_ = np.asarray([sum(c_year[:i]) for i in range(c_year.shape[0])])
-    spots = spots_[[k*step for k in range(int(spots_.shape[0]/step))]]
-    fig, ax = plt.subplots(figsize=(15, 6))
-    plot(np.asarray(tempx), label = "Profile: "+str(prof));
-    plt.xticks(spots,u_year);
-    if temp == True:
-        plt.title("Sea Surface Temperature Evolution ");
-        plt.ylabel("Temperature C")
-        plt.xlabel("Year")
-    else:
-        plt.title("Sea Surface Salanity Evolution ");
-        plt.ylabel("Salanity")
-        plt.xlabel("Year")
-    plt.grid(True)
-    plt.legend()
-
-
-def mode_dist(lon_test,lat_test,map,pi_hat, title, combine = False, subplot = 221):
-    "Plot dynamical mode distributions"
-
-    lons = lon_test
-    lats = lat_test
-    x, y = map(lons, lats)
-
-    dominant_mode = np.argmax(pi_hat, axis = 1)
-
-    modes = np.unique(dominant_mode)
-    colors = ['r', 'g', 'b', 'c', 'm', 'y']
-
-    if combine:
-        plt.subplot(subplot)
-
-    for m in list(modes):
-        mask = np.where(dominant_mode == m)
-        x_mask = x[mask]
-        y_mask = y[mask]
-        markers = np.full((len(mask), 1), 1)
-        dominants = dominant_mode[mask]
-        map.scatter(x_mask, y_mask, c = colors[m], label = "mode"+str(m+1), s = markers)
-    map.drawcoastlines()
-    plt.legend()
-    plt.title(title)
-
-
 def mode(lon_test,lat_test,map,pi_hat, m, title, combine = False, subplot = 221):
     "Plot dynamical mode distributions"
 
@@ -441,12 +289,63 @@ def mode(lon_test,lat_test,map,pi_hat, m, title, combine = False, subplot = 221)
     map.drawcoastlines()
     plt.legend()
     plt.title(title)
+
+def shiftedColorMap(cmap, start=0, midpoint=0.5, stop=1.0, name='shiftedcmap'):
+    '''
+    Function to offset  the "center" of a colormap. Useful for
+    data with a negative min and positive max and you want the
+    middle of the colormap's dynamic range to be at zero.
+    https://stackoverflow.com/questions/7404116/defining-the-midpoint-of-a-colormap-in-matplotlib
+    Input
+    -----
+      cmap : The matplotlib colormap to be altered
+      start : Offset from lowest point in the colormap's range.
+          Defaults to 0.0 (no lower offset). Should be between
+          0.0 and `midpoint`.
+      midpoint : The new center of the colormap. Defaults to
+          0.5 (no shift). Should be between 0.0 and 1.0. In
+          general, this should be  1 - vmax / (vmax + abs(vmin))
+          For example if your data range from -15.0 to +5.0 and
+          you want the center of the colormap at 0.0, `midpoint`
+          should be set to  1 - 5/(5 + 15)) or 0.75
+      stop : Offset from highest point in the colormap's range.
+          Defaults to 1.0 (no upper offset). Should be between
+          `midpoint` and 1.0.
+    '''
+    cdict = {
+        'red': [],
+        'green': [],
+        'blue': [],
+        'alpha': []
+    }
+
+    # regular index to compute the colors
+    reg_index = np.linspace(start, stop, 257)
+
+    # shifted index to match the data
+    shift_index = np.hstack([
+        np.linspace(0.0, midpoint, 128, endpoint=False),
+        np.linspace(midpoint, 1.0, 129, endpoint=True)
+    ])
+
+    for ri, si in zip(reg_index, shift_index):
+        r, g, b, a = cmap(ri)
+
+        cdict['red'].append((si, r, r))
+        cdict['green'].append((si, g, g))
+        cdict['blue'].append((si, b, b))
+        cdict['alpha'].append((si, a, a))
+
+    newcmap = matplotlib.colors.LinearSegmentedColormap(name, cdict)
+    plt.register_cmap(cmap=newcmap)
+
+    return newcmap
 #########################################
 ## Plot spatial temperature distribution#
 #########################################
-def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pres_lev, neigboors, cmap_temp = True):
+def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pres_lev, neigboors, cmap_temp = True, lon_ = False):
     """
-    target prediction in time and space
+    Target prediction in time and space
 
     - lat: latitude of the data
     - lon: longitude of the data
@@ -454,6 +353,9 @@ def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pre
     - Nlon: number of point discritizing the longitude
     - Nlat: number of point discritizing the latitude
     - pres_lev: a determined pressure at which we present data ± 15
+    - vert : boolean
+        * False: surface target prediction
+        * True:
     """
 
     # create a 2D coordinate grid
@@ -506,11 +408,27 @@ def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pre
     est_interpol[mask_region] = nan
     err_interpol[mask_region] = nan
 
-    if cmap_temp:
+    vmin = np.min(err_interpol[~np.isnan(err_interpol)])
+    vmax = np.max(err_interpol[~np.isnan(err_interpol)])
+    midpoint = 1 - vmax/(vmax + abs(vmin))
 
+    if cmap_temp:
         cmap = 'coolwarm'
+        cmap2 =shiftedColorMap(matplotlib.cm.bwr, midpoint =midpoint)
     else:
         cmap = 'jet'
+        cmap2 =shiftedColorMap(matplotlib.cm.bwr, midpoint =midpoint)
+
+    max_gt = np.max(gt_interpol[~np.isnan(gt_interpol)])
+    min_gt = np.min(gt_interpol[~np.isnan(gt_interpol)])
+    max_est = np.max(est_interpol[~np.isnan(est_interpol)])
+    min_est = np.min(est_interpol[~np.isnan(est_interpol)])
+
+    range_max = ceil(max(max_gt,max_est)) + 2
+    if min(min_gt,min_est) < 0:
+        range_min = int(min(min_gt,min_est) -1)
+    else:
+        range_min = int(min(min_gt,min_est))
 
     plon, plat = map(ylon, xlat)
     xxlon,xxlat = meshgrid(plon,plat)
@@ -519,20 +437,11 @@ def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pre
     meridians = np.arange(10.,351.,5.) # lon
 
     fig  = plt.figure(figsize = (15,10))
-    subplots_adjust(wspace = 0.1, hspace = 0.2)
-
-    ax1 = fig.add_subplot(221)
-    map.contourf(xxlon, xxlat, gt_interpol, cmap = cmap)
-    plt.title("GT-PRES-%.f"%pres_lev)
-    map.drawcoastlines()
-    map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
-    map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
-    divider = make_axes_locatable(ax1)
-    cax1 = divider.append_axes("right", size="5%", pad=0.05)
-    plt.colorbar(cax=cax1)
+    subplots_adjust(wspace = 0.2, hspace = 0.2)
 
     ax2 = fig.add_subplot(222)
-    map.contourf(xxlon, xxlat, est_interpol, cmap = cmap)
+    #cs = map.contourf(xxlon, xxlat, est_interpol, cmap = cmap, vmin= range_min, vmax = range_max)
+    cs = map.contourf(xxlon, xxlat, est_interpol, cmap = cmap)
     plt.title("EST-PRES-%.f"%pres_lev)
     map.drawcoastlines()
     map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
@@ -541,8 +450,19 @@ def target_predict(lon, lat, pres, Nlon, Nlat,map, gt_targ, est_targ, error, pre
     cax2 = divider.append_axes("right", size="5%", pad=0.05)
     plt.colorbar(cax=cax2)
 
+    ax1 = fig.add_subplot(221)
+    #map.contourf(xxlon, xxlat, gt_interpol, cmap = cmap, vmin= range_min, vmax = range_max,levels = cs.levels)
+    map.contourf(xxlon, xxlat, gt_interpol, cmap = cmap,levels = cs.levels)
+    plt.title("GT-PRES-%.f"%pres_lev)
+    map.drawcoastlines()
+    map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+    map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+    divider = make_axes_locatable(ax1)
+    cax1 = divider.append_axes("right", size="5%", pad=0.05)
+    plt.colorbar(cax=cax1)
+
     ax3 = subplot2grid((2,8), (1, 2), colspan=4)
-    map.contourf(xxlon, xxlat, err_interpol, cmap = cmap)
+    map.contourf(xxlon, xxlat, err_interpol, cmap = cmap2, levels = 20)
     plt.title("%.f-Global-Error-%.2f"%(pres_lev,err_mean))
     map.drawcoastlines()
     map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
