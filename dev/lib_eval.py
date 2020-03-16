@@ -426,6 +426,8 @@ def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_va
         cmap2 =shiftedColorMap(matplotlib.cm.bwr, midpoint =midpoint)
 
 
+    fig  = plt.figure(figsize = (15,10))
+    subplots_adjust(wspace = 0.2, hspace = 0.2)
     if surf == 0:
         ## select interpolated region where the data exists
         mask_pres = pres < 30
@@ -448,9 +450,6 @@ def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_va
 
         parallels = np.arange(0.,81,5.) # lat
         meridians = np.arange(10.,351.,5.) # lon
-
-        fig  = plt.figure(figsize = (15,10))
-        subplots_adjust(wspace = 0.2, hspace = 0.2)
 
         ax2 = fig.add_subplot(222)
         cs = map.contourf(xxlon, xxlat, est_interpol, cmap = cmap)
@@ -626,7 +625,7 @@ def temp_dyna_mode_var(pi_hat, lon, lat, juld,  pres, sel_lat, sel_lon, sel_pres
 #############################################
 ## Plot spatial dynamical mode distribution #
 #############################################
-def spa_dyna_mode_dis(pi_hat, lon, lat, Nlat, Nlon, pres, h_depth,l_depth, inter_depth,neigboors, map, temp = True):
+def spa_dyna_mode_dis(pi_hat, lon, lat, pres, Nx, Ny, prd_var ,neigboors, map, cmaptemp = True, surf = 1):
     """
     Plot the spatial dynamical mode distribution between two depth levels in the ocean.
 
@@ -636,108 +635,195 @@ def spa_dyna_mode_dis(pi_hat, lon, lat, Nlat, Nlon, pres, h_depth,l_depth, inter
     - lon: ...
     - lat: ...
     - pres: infos of the pressure at each point in the ocean
-    - h_depth: the higher depth level from the inter_depth
-    - l_depth: the lower depth from the the inter_depth
-    - inter_depth: a depth level at which we interpolate the prior dynamical modes
+    - prd_mod: predicting variable based modes
     - map: a basemap object
+    - surf: 0 (surface), 1 (longitude), 2 (latitude)
     """
 
-    ## create a 2D coordinate grid
-    xlat = np.linspace(min(lat),max(lat),Nlat)
-    ylon = np.linspace(min(lon),max(lon),Nlon)
+    import timeit
+    start = timeit.timeit()
 
-    yylon, xxlat = np.meshgrid(ylon,xlat)
-    xxlat = xxlat.reshape(xxlat.shape[0]*xxlat.shape[1],1)
-    yylon = yylon.reshape(xxlat.shape[0]*xxlat.shape[1],1)
-    zzdepth = inter_depth*np.ones((xxlat.shape[0]*xxlat.shape[1],1))
+    # create a 2D coordinate grid
+    if surf == 0:
+        x = np.linspace(min(lon),max(lon),Nx)
+        y = np.linspace(min(lat),max(lat),Ny)
+        #  interpolating data mask
+        prd_mask = np.array(np.where((prd_var-50 < pres)*(pres < prd_var + 50))[0])
+    elif surf == 1:
+        x = np.linspace(min(lat),max(lat),Nx)
+        y = np.linspace(min(pres),max(pres),Ny)
+        prd_mask = np.array(np.where((prd_var-3 < lon)*(lon < prd_var + 3))[0])
+    elif surf == 2:
+        x = np.linspace(min(lon),max(lon),Nx)
+        y = np.linspace(min(pres),max(pres),Ny)
+        prd_mask = np.array(np.where((prd_var-3 < lat)*(lat < prd_var + 3))[0])
+    else:
+        print("Surf is not a valid number")
+    #prd_mask = prd_mask.reshape(prd_mask.shape[0],1)
 
-    ## Extract data
-    data_mask = np.where((pres >= h_depth)*(pres <= l_depth))
-    extracted_priors = pi_hat[data_mask[0],:]
-    lev_lon = lon[data_mask[0]]
-    lev_lat = lat[data_mask[0]]
-    lev_pres = pres[data_mask[0]]
+    ## interpolating grid
+    xx, yy = np.meshgrid(x,y)
+    xx = xx.reshape(xx.shape[0]*xx.shape[1],1)
+    yy = yy.reshape(xx.shape[0]*xx.shape[1],1)
+    zz = prd_var*np.ones((xx.shape[0]*xx.shape[1],1))
 
-    N = lev_lon.shape[0]
-    features = np.concatenate((lev_lat.reshape(N,1),lev_lon.reshape(N,1),lev_pres.reshape(N,1)),axis = 1)
-    points = np.concatenate((xxlat,yylon,zzdepth),axis = 1)
+    ## interpolating data
+    ipres = pres[prd_mask]
+    ilat = lat[prd_mask]
+    ilon = lon[prd_mask]
+    extracted_priors = pi_hat[prd_mask,:]
 
-    ## existing data region
-    mask_pres = pres < 30
-    pres_under_30 = pres[mask_pres]
-    lon_30 = lon[mask_pres]
-    lat_30 = lat[mask_pres]
-    M = extracted_priors.shape[1]
+    ## data points
+    N = ilon.shape[0]
+    features = np.concatenate((ilat.reshape(N,1),ilon.reshape(N,1), ipres.reshape(N,1)),axis = 1)
+    if surf == 0:
+        points = np.concatenate((yy,xx,zz),axis = 1)
+    elif surf == 1:
+        points = np.concatenate((xx,zz,yy),axis = 1)
+    elif surf == 2:
+        points = np.concatenate((zz,xx,yy),axis = 1)
 
     # interpolation
-    dyn_interpols = np.zeros((Nlat*Nlon,M))
-    for dyn in tqdm(range(M), disable=False):
+    M = extracted_priors.shape[1]
+    dyn_interpols = np.zeros((Nx*Ny,M))
+    for dyn in tqdm(range(M), disable=True):
         dyn_interpols[:,dyn] = griddata(features,extracted_priors[:,dyn],points, rescale=True)
         dyn_interpols[np.isnan(dyn_interpols[:,dyn]),dyn] = 0
-    dyn_interpols = dyn_interpols/(dyn_interpols.sum(axis =1).reshape(Nlat*Nlon,1))
+    dyn_interpols = dyn_interpols/(dyn_interpols.sum(axis =1).reshape(Nx*Ny,1))
 
 
     fig = plt.figure(figsize = (20,15))
     subplots_adjust(wspace=0.2, hspace=0.2)
 
-    for dyn in tqdm(range(M), disable=False):
-        dyn_interpol = dyn_interpols[:,dyn].reshape(Nlat,Nlon)
-
+    if  surf == 0:
+        ## select interpolated region where the data exists
+        mask_pres = pres < 30
+        pres_under_30 = pres[prd_mask]
+        lon_30 = lon[prd_mask]
+        lat_30 = lat[prd_mask]
         # existing data region mask (care  only about the surface)
-        mask_region = np.ones((Nlat,Nlon)) < 2
+        mask_region = np.ones((Nx,Ny)) < 2
         for k in range(len(lon_30)):
-            i = np.argmin(abs(xlat - lat_30[k]))
-            j = np.argmin(abs(ylon - lon_30[k]))
+            i = np.argmin(abs(y - lat_30[k]))
+            j = np.argmin(abs(x - lon_30[k]))
             mask_region[i-neigboors:i+neigboors,j-neigboors:j+neigboors] = False
-        # apply the mask
-        dyn_interpol[mask_region] = nan
 
-        if temp:
-            cmap = 'YlOrBr'
-        else:
-            cmap = 'BuPu'
-        plon, plat = map(ylon, xlat)
-        xxlon_,xxlat_ = meshgrid(plon,plat)
+        for dyn in tqdm(range(M), disable=True):
+            dyn_interpol = dyn_interpols[:,dyn].reshape(Nx,Ny)
 
-        parallels = np.arange(0.,81,5.) # lat
-        meridians = np.arange(10.,351.,5.) # lon
+            # apply the mask
+            dyn_interpol[mask_region] = nan
 
-        if dyn == 6:
-            ax = subplot2grid((3,12), (2, 1), colspan=4)
-            map.contourf(xxlon_, xxlat_, dyn_interpol, cmap = cmap)
-            plt.title("Dyn-Mode-"+str(dyn+1))
-            map.drawcoastlines()
-            map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
-            map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(cax=cax)
+            if cmaptemp:
+                cmap = 'YlOrBr'
+            else:
+                cmap = 'BuPu'
+            plon, plat = map(x, y)
+            xxlon_,xxlat_ = meshgrid(plon,plat)
 
-        elif dyn == 7:
-            ax = subplot2grid((3,12), (2, 6), colspan=4)
-            map.contourf(xxlon_, xxlat_, dyn_interpol, cmap = cmap)
-            plt.title("Dyn-Mode-"+str(dyn+1))
-            map.drawcoastlines()
-            map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
-            map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(cax=cax)
+            parallels = np.arange(0.,81,5.) # lat
+            meridians = np.arange(10.,351.,5.) # lon
 
-        else:
-            plt.subplot(3,3,dyn+1)
-            ax = plt.gca()
-            map.contourf(xxlon_, xxlat_, dyn_interpol, cmap = cmap)
-            plt.title("Dyn-Mode-"+str(dyn+1))
-            map.drawcoastlines()
-            map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
-            map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(cax=cax)
+            if dyn == 6:
+                ax = subplot2grid((3,12), (2, 1), colspan=4)
+                map.contourf(xxlon_, xxlat_, dyn_interpol, cmap = cmap,  levels =cs.levels)
+                plt.title("Dyn-Mode-"+str(dyn+1))
+                map.drawcoastlines()
+                map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+                map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(cax=cax)
+
+            elif dyn == 7:
+                ax = subplot2grid((3,12), (2, 6), colspan=4)
+                map.contourf(xxlon_, xxlat_, dyn_interpol, cmap = cmap,  levels =cs.levels)
+                plt.title("Dyn-Mode-"+str(dyn+1))
+                map.drawcoastlines()
+                map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+                map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(cax=cax)
+
+            else:
+                plt.subplot(3,3,dyn+1)
+                ax = plt.gca()
+                if dyn == 0:
+                    cs = map.contourf(xxlon_, xxlat_, dyn_interpol, vmin = 0, vmax = 1, cmap = cmap)
+                else:
+                    map.contourf(xxlon_, xxlat_, dyn_interpol, cmap = cmap, levels =cs.levels)
+                plt.title("Dyn-Mode-"+str(dyn+1))
+                map.drawcoastlines()
+                map.drawparallels(parallels,labels=[True,False,True,False],linewidth=0.3);
+                map.drawmeridians(meridians,labels=[True,False,False,True],linewidth=0.3);
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(cax=cax)
+
+    else:
+
+        if surf == 1:
+            label_, label, labelx  ='W','LON', 'LAT'
+
+        elif surf == 2:
+            label_, label, labelx = 'N','LAT', 'LON'
+
+        xx = xx.reshape(Nx,Ny)
+        yy = yy.reshape(Nx,Ny)
+
+        for dyn in tqdm(range(M), disable=True):
+            dyn_interpol = dyn_interpols[:,dyn].reshape(Nx,Ny)
+
+            if cmaptemp:
+                cmap = 'YlOrBr'
+            else:
+                cmap = 'BuPu'
+
+            if dyn == 6:
+                ax = subplot2grid((3,12), (2, 1), colspan=4)
+                plt.contourf(xx, yy, dyn_interpol, cmap = cmap,  levels =cs.levels)
+                ax.set_ylim(ax.get_ylim()[::-1])
+                if surf == 1:
+                    ax.set_xlim(ax.get_xlim()[::-1])
+                plt.grid()
+                plt.title("Dyn-Mode-"+str(dyn+1))
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(cax=cax)
+
+            elif dyn == 7:
+                ax = subplot2grid((3,12), (2, 6), colspan=4)
+                plt.contourf(xx, yy, dyn_interpol, cmap = cmap,  levels =cs.levels)
+                ax.set_ylim(ax.get_ylim()[::-1])
+                if surf == 1:
+                    ax.set_xlim(ax.get_xlim()[::-1])
+                plt.grid()
+                plt.title("Dyn-Mode-"+str(dyn+1))
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(cax=cax)
+
+            else:
+                plt.subplot(3,3,dyn+1)
+                ax = plt.gca()
+                if dyn == 0:
+                    cs = plt.contourf(xx, yy, dyn_interpol, vmin = 0, vmax = 1, cmap = cmap)
+                else:
+                    plt.contourf(xx, yy, dyn_interpol, cmap = cmap, levels =cs.levels)
+                ax.set_ylim(ax.get_ylim()[::-1])
+                if surf == 1:
+                    ax.set_xlim(ax.get_xlim()[::-1])
+                plt.title("Dyn-Mode-"+str(dyn+1))
+                plt.grid()
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                plt.colorbar(cax=cax)
+    end = timeit.timeit()
+    print(end - start)
 
 ###############################
-## Turbulence observations
+## Turbulence observations    #
 ###############################
 def turbulence(pi_hat, beta, f_data, std_data, lon, lat, juld, X,title = 'TEMP', lat_fix = 40, lon_fix = -45, t = 20000):
 
