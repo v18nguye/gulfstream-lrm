@@ -5,9 +5,9 @@ The ocean is a dynamical turbulent and chaotic system, so very complexly to inte
 In our project, we introduced the Gaussian Mixture Model resolved by the classical Expectation-Maximization algorithm to characterize the Gulf Stream turbulence region. Our analysis were conducted to analyse the three dimensional distribution of the seawater temperature and salinity in the region. Moreover, we tried also to capture the seasonal variation of these ocean's characteristics, and to represent dominant currents exiting in the region, which have had great impact on physical oceanography in the region. 
 
 ### The project including several file units in the dev document.
-- data processing libary
-- result evaluation libary
-- model training libary
+- data processing library
+- result evaluation library
+- model training library
 - data analysis notebook
 - result analysis notebook
 - trained model notebook
