@@ -164,11 +164,7 @@ def data_split(region, pres_max, fe = 0.1):
   uniq_profile, _ = np.unique(region['profile_ids'], return_counts = True)
   X_train = np.empty(shape=[0, len(features)])
   y_train = np.empty(shape=[0, len(targets)])
-  # X_test = np.empty(shape=[0, len(features)])
-  # y_test = np.empty(shape=[0, len(targets)])
   o_feature_train = np.empty(shape=[0, len(o_features)])
-  # o_feature_test = np.empty(shape=[0, len(o_features)])
-  # profile pressure less than 100
 
   # Extract by profile_ids, and pressure less than 100
   for i,uni in enumerate(uniq_profile):
@@ -183,20 +179,13 @@ def data_split(region, pres_max, fe = 0.1):
       x_uni_train = np.squeeze(np.asarray([[region[x][train]] for x in features])).T
       y_uni_train = np.squeeze(np.asarray([[region[x][train]] for x in targets])).T
 
-      # x_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in features])).T
-      # y_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in targets])).T
-
       o_fea_uni_train = np.squeeze(np.asarray([[region[x][train]] for x in o_features])).T
-      # o_fea_uni_test = np.squeeze(np.asarray([[region[x][test]] for x in o_features])).T
 
       X_train = np.concatenate((X_train,x_uni_train.reshape(train.shape[0],len(features))), axis =0)
       y_train = np.concatenate((y_train,y_uni_train.reshape(train.shape[0],len(targets))), axis =0)
 
-      # X_test = np.concatenate((X_test,x_uni_test.reshape(test.shape[0],len(features))), axis =0)
-      # y_test = np.concatenate((y_test,y_uni_test.reshape(test.shape[0],len(targets))), axis =0)
 
       o_feature_train = np.concatenate((o_feature_train,o_fea_uni_train.reshape(train.shape[0],len(o_features))), axis = 0)
-      # o_feature_test = np.concatenate((o_feature_test,o_fea_uni_test.reshape(test.shape[0],len(o_features))), axis = 0)
 
   sav_obj = open("x.pkl", 'wb')
   pickle.dump(X_train,sav_obj)

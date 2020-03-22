@@ -21,6 +21,7 @@ from scipy.stats import multivariate_normal as mn
 from itertools import permutations
 from scipy import stats
 from matplotlib.pyplot import figure
+from matplotlib.transforms import Bbox
 #import torch
 from torch.distributions.multivariate_normal import MultivariateNormal
 nasa_julian = 98
@@ -159,14 +160,14 @@ def y_eval(beta_,sigma_,lambda_,X,y,nb_class,coln,row, save,nb, test):
         else:
             np.savetxt('y_h_train_E'+str(nb)+'_'+str(nb_class[c])+'.txt',y_esti)
 
-    # plt.subplot(row, coln, c+1)
-    #
-    # plt.scatter(y,y_esti, marker = ".", s = markers, c ='b', label = "r2_score = " +str(r2_score(y, y_esti)))
-    # plt.plot(x_linsp,x_linsp,'k')
-    # plt.ylabel('Predicted Temperature')
-    # plt.xlabel('GT Temperature')
-    # plt.title('Model with: '+str(nb_class[c])+' classes')
-    # plt.legend()
+    plt.subplot(row, coln, c+1)
+
+    plt.scatter(y,y_esti, marker = ".", s = markers, c ='b', label = "r2_score = " +str(r2_score(y, y_esti)))
+    plt.plot(x_linsp,x_linsp,'k')
+    plt.ylabel('Predicted Temperature')
+    plt.xlabel('GT Temperature')
+    plt.title('Model with: '+str(nb_class[c])+' classes')
+    plt.legend()
     index = index + nb_class[th]
     th = th +1
 
@@ -343,7 +344,21 @@ def shiftedColorMap(cmap, start=0, midpoint=0.5, stop=1.0, name='shiftedcmap'):
 #########################################
 ##  Plot target prediction              #
 #########################################
-def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_var, neigboors, cmap_temp = True, surf = 0):
+def full_extent(ax, pad=0.0):
+    """Get the full extent of an axes, including axes labels, tick labels, and
+    titles."""
+    # For text objects, we need to draw the figure first, otherwise the extents
+    # are undefined.
+    ax.figure.canvas.draw()
+    items = ax.get_xticklabels() + ax.get_yticklabels()
+#    items += [ax, ax.title, ax.xaxis.label, ax.yaxis.label]
+#    items += [ax.get_xaxis().get_label(), ax.get_yaxis().get_label()]
+    items += [ax, ax.title]
+    bbox = Bbox.union([item.get_window_extent() for item in items])
+
+    return bbox.expanded(1.0 + pad, 1.0 + pad)
+
+def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_var, neigboors, savename, cmap_temp = True, surf = 0):
     """
     Target prediction in time and space
 
@@ -426,9 +441,10 @@ def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_va
         cmap2 =shiftedColorMap(matplotlib.cm.bwr, midpoint =midpoint)
 
 
-    fig  = plt.figure(figsize = (15,10))
-    subplots_adjust(wspace = 0.2, hspace = 0.2)
+
     if surf == 0:
+        fig  = plt.figure(figsize = (15,10))
+        subplots_adjust(wspace = 0.2, hspace = 0.2)
         ## select interpolated region where the data exists
         mask_pres = pres < 30
         pres_under_30 = pres[prd_mask]
@@ -460,6 +476,8 @@ def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_va
         divider = make_axes_locatable(ax2)
         cax2 = divider.append_axes("right", size="5%", pad=0.05)
         plt.colorbar(cax=cax2)
+        extent = full_extent(ax2).transformed(fig.dpi_scale_trans.inverted())
+        plt.savefig('.\\figs\\%sEST.jpg'%savename,bbox_inches=extent.expanded(1.3, 1.15))
 
         ax1 = fig.add_subplot(221)
         map.contourf(xxlon, xxlat, gt_interpol, cmap = cmap,levels = cs.levels)
@@ -470,6 +488,8 @@ def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_va
         divider = make_axes_locatable(ax1)
         cax1 = divider.append_axes("right", size="5%", pad=0.05)
         plt.colorbar(cax=cax1)
+        extent = full_extent(ax1).transformed(fig.dpi_scale_trans.inverted())
+        plt.savefig('.\\figs\\%sGT.jpg'%savename,bbox_inches=extent.expanded(1.3, 1.15))
 
         ax3 = subplot2grid((2,8), (1, 2), colspan=4)
         map.contourf(xxlon, xxlat, err_interpol, cmap = cmap2, levels = 20)
@@ -480,8 +500,13 @@ def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_va
         divider = make_axes_locatable(ax3)
         cax3 = divider.append_axes("right", size="5%", pad=0.05)
         plt.colorbar(cax=cax3)
+        extent = full_extent(ax3).transformed(fig.dpi_scale_trans.inverted())
+        plt.savefig('.\\figs\\%sMSE.jpg'%savename,bbox_inches=extent.expanded(1.3, 1.15))
 
     else:
+        fig  = plt.figure(figsize = (15,10))
+        subplots_adjust(wspace = 0.2, hspace = 0.35)
+
         if surf == 1:
             label_, label, labelx  ='W','LON', 'LAT'
 
@@ -490,10 +515,6 @@ def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_va
 
         xx = xx.reshape(Nx,Ny)
         yy = yy.reshape(Nx,Ny)
-
-        fig  = plt.figure(figsize = (15,10))
-
-        subplots_adjust(wspace = 0.2, hspace = 0.2)
 
         ax2 = fig.add_subplot(222)
         cs = plt.contourf(xx,yy,est_interpol, cmap = cmap)
@@ -507,6 +528,8 @@ def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_va
         divider = make_axes_locatable(ax2)
         cax2 = divider.append_axes("right", size="5%", pad=0.05)
         plt.colorbar(cax=cax2)
+        extent = full_extent(ax2).transformed(fig.dpi_scale_trans.inverted())
+        plt.savefig('.\\figs\\%sEST.jpg'%savename,bbox_inches=extent.expanded(1.2, 1.15))
 
         ax1 = fig.add_subplot(221)
         plt.contourf(xx, yy, gt_interpol, cmap = cmap,levels = cs.levels)
@@ -520,6 +543,8 @@ def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_va
         divider = make_axes_locatable(ax1)
         cax1 = divider.append_axes("right", size="5%", pad=0.05)
         plt.colorbar(cax=cax1)
+        extent = full_extent(ax1).transformed(fig.dpi_scale_trans.inverted())
+        plt.savefig('.\\figs\\%sGT.jpg'%savename,bbox_inches=extent.expanded(1.2, 1.15))
 
         ax3 = subplot2grid((2,8), (1, 2), colspan=4)
         divider = make_axes_locatable(ax3)
@@ -533,6 +558,8 @@ def target_predict(lon, lat, pres, Nx, Ny, map, gt_targ, est_targ, error, prd_va
         plt.ylabel("PRES")
         cax3 = divider.append_axes("right", size="5%", pad=0.05)
         plt.colorbar(cax=cax3)
+        extent = full_extent(ax3).transformed(fig.dpi_scale_trans.inverted())
+        plt.savefig('.\\figs\\%sMSE.jpg'%savename,bbox_inches=extent.expanded(1.22, 1.15))
 ############################################
 # Plot temporal dynamical mode distribution#
 ############################################
@@ -819,6 +846,7 @@ def spa_dyna_mode_dis(pi_hat, lon, lat, pres, Nx, Ny, prd_var ,neigboors, map, c
                 divider = make_axes_locatable(ax)
                 cax = divider.append_axes("right", size="5%", pad=0.05)
                 plt.colorbar(cax=cax)
+    plt.savefig('.\\figs\\dynamic2.jpg')
     end = timeit.timeit()
     print(end - start)
 
@@ -853,13 +881,10 @@ def turbulence(pi_hat, beta, f_data, std_data, lon, lat, juld, X,title = 'TEMP',
     ## interpolate pi_hat
     mask_lon = np.abs(lon - lon_fix) < 2
     mask_lat = np.abs(lat - lat_fix) < 2
-#     mask_juld = np.abs(juld - alpha1_x) < 2
-#     mask = np.where(mask_lon*mask_lat*mask_juld)[0]
     mask = np.where(mask_lon*mask_lat)[0]
     N = mask.shape[0]
     print("Number of data: ", N)
     features = np.concatenate((lon[mask].reshape(N,1),lat[mask].reshape(N,1),X[mask,8].reshape(N,1)), axis =1)
-#     features = np.concatenate((juld[mask].reshape(N,1),X[mask,8].reshape(N,1)), axis =1)
     pi_hat_targ = pi_hat[mask,:]
     lat_vec = lat_fix*np.ones((100,1))
     lon_vec = lon_fix*np.ones((100,1))
@@ -906,22 +931,38 @@ def turbulence(pi_hat, beta, f_data, std_data, lon, lat, juld, X,title = 'TEMP',
     g_sla_anti = g_sla_anti.reshape(100,100)
     g_sla_e,g_depths =  np.meshgrid(sla_e,depths)
 
-#     fig = plt.figure(figsize = (20,15))
-#     subplots_adjust(wspace=0.2, hspace=0.2)
+    ## convert to wrt anomaly = 0
+    temps_cyclone = temps_cyclone - temps_cyclone[:,0].reshape(100,1)
+    temps_anti_cyclone = temps_anti_cyclone - temps_anti_cyclone[:,0].reshape(100,1)
+
+
+    vmin1 = np.min(temps_cyclone)
+    vmax1 = np.max(temps_cyclone)
+    midpoint1 = 1 - vmax1/(vmax1 + abs(vmin1))
+    cmap1 =shiftedColorMap(matplotlib.cm.bwr, midpoint =midpoint1)
+
+    vmin2 = np.min(temps_anti_cyclone)
+    vmax2 = np.max(temps_anti_cyclone)
+    midpoint2 = 1 - vmax2/(vmax2 + abs(vmin2))
+    cmap2 =shiftedColorMap(matplotlib.cm.bwr, midpoint =midpoint2)
+
     ## Anti-cyclone plots
     ax = subplot2grid((6,7), (0, 0), colspan=3, rowspan =2)
     plt.plot(sla_e,sla_anti)
     plt.title("SLA for Anti-cyclone")
     ax = subplot2grid((6,7), (3, 0), colspan=3, rowspan =3)
-    plt.contourf(g_sla_e,-g_depths,temps_anti_cyclone)
+    #ax = subplot2grid((3,7), (0, 0), colspan=3, rowspan =3)
+    plt.contourf(g_sla_e,-g_depths,temps_anti_cyclone, cmap = cmap2 )
     plt.title(title)
     ## cyclone plots
     ax = subplot2grid((6,7), (0, 4), colspan=3, rowspan =2)
     plt.plot(sla_e,sla)
     plt.title("SLA for Cyclone")
     ax = subplot2grid((6,7), (3, 4), colspan=3, rowspan =3)
-    plt.contourf(g_sla_e,-g_depths,temps_cyclone)
+    #ax = subplot2grid((3,7), (0, 4), colspan=3, rowspan =3)
+    plt.contourf(g_sla_e,-g_depths,temps_cyclone, cmap = cmap1)
     plt.title(title)
+    plt.savefig('.\\figs\\%s.jpg'%title)
 
 
 ###############################
@@ -976,7 +1017,7 @@ def sea_temp(indexs, gt_temps, est_temps, gt_dates):
     return temps_in_year_gt, temps_in_year_est, temps_in_year_residus
 
 
-def sea_temp_plot(p_index,coords,X, gt_temp, est_temp, t1, t2, t3, lat_thres = 3,lon_thres = 3, date_thres = 1000, depth_thres = 10, combine = True ,subplot = 221, temp = True):
+def sea_temp_plot(p_index,coords,X, gt_temp, est_temp, fig, t1, t2, t3, savename, save = True, lat_thres = 3,lon_thres = 3, date_thres = 1000, depth_thres = 10, combine = True ,subplot = 221, temp = True):
     """
     Seasonal temperature visualization at severals small local regions in ocean
     Example: sea_temp_plot(p_index,coords_g_train,X, gt_temp_train, est_temp_train,t1 = 1000,t2 = 1000, t3 =50,
@@ -1020,6 +1061,9 @@ def sea_temp_plot(p_index,coords,X, gt_temp, est_temp, t1, t2, t3, lat_thres = 3
         plt.ylabel('Salinity')
     plt.xticks(spots,x_labels)
     plt.legend()
+    ax = plt.gca()
+    extent = full_extent(ax).transformed(fig.dpi_scale_trans.inverted())
+    plt.savefig('.\\figs\\%s.jpg'%savename,bbox_inches=extent.expanded(1.22, 1.15))
 
 def index_extract(p_index,lat,lon,juld,X,lat_thres, lon_thres, date_thres, depth_thres, patch = True):
     """
