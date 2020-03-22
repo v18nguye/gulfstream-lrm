@@ -6,3 +6,4 @@ The ocean is a dynamical turbulent and chaotic system, so very complexly to inte
 - data analysis notebook
 - result analysis notebook
 - trained model notebook
+- For more details about data, please contact me through van-khoa.nguyen@imt-atlantique.net.
